@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Team Task Manager</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="auth-panel" id="authView">
+        <div class="brand-block">
+          <p class="eyebrow">Team Task Manager</p>
+          <h1>Projects, people, and progress in one focused workspace.</h1>
+          <p>Invite teammates, assign work, track overdue tasks, and keep project ownership clear with Admin and Member roles.</p>
+        </div>
+
+        <div class="auth-card">
+          <div class="tabs" role="tablist">
+            <button class="tab active" id="loginTab" type="button">Login</button>
+            <button class="tab" id="signupTab" type="button">Signup</button>
+          </div>
+
+          <form id="authForm">
+            <label class="signup-only hidden">
+              Name
+              <input id="nameInput" autocomplete="name" placeholder="Aarav Sharma" />
+            </label>
+            <label>
+              Email
+              <input id="emailInput" type="email" autocomplete="email" placeholder="you@example.com" required />
+            </label>
+            <label>
+              Password
+              <input id="passwordInput" type="password" autocomplete="current-password" placeholder="Minimum 6 characters" required />
+            </label>
+            <button class="primary" type="submit" id="authSubmit">Login</button>
+            <p class="form-message" id="authMessage"></p>
+          </form>
+        </div>
+      </section>
+
+      <section class="app-view hidden" id="appView">
+        <aside class="sidebar">
+          <div>
+            <p class="eyebrow">Workspace</p>
+            <h2>Team Task Manager</h2>
+            <p id="userLabel" class="muted"></p>
+          </div>
+
+          <form class="stacked" id="projectForm">
+            <h3>New Project</h3>
+            <input id="projectName" placeholder="Project name" required />
+            <textarea id="projectDescription" placeholder="Short description"></textarea>
+            <button class="primary" type="submit">Create Project</button>
+          </form>
+
+          <div class="project-list" id="projectList"></div>
+          <button class="ghost" id="logoutButton" type="button">Logout</button>
+        </aside>
+
+        <section class="workspace">
+          <div class="empty-state" id="emptyState">
+            <h2>Create or select a project</h2>
+            <p>Projects you create make you an Admin. Members can update only the tasks assigned to them.</p>
+          </div>
+
+          <div class="project-work hidden" id="projectWork">
+            <header class="workspace-header">
+              <div>
+                <p class="eyebrow" id="roleLabel"></p>
+                <h1 id="activeProjectName"></h1>
+                <p class="muted" id="activeProjectDescription"></p>
+              </div>
+              <button class="ghost" id="refreshButton" type="button">Refresh</button>
+            </header>
+
+            <section class="metrics" id="metrics"></section>
+
+            <section class="grid two">
+              <div class="panel admin-only">
+                <h3>Add Member</h3>
+                <form class="inline-form" id="memberForm">
+                  <input id="memberEmail" type="email" placeholder="member@example.com" required />
+                  <select id="memberRole">
+                    <option>Member</option>
+                    <option>Admin</option>
+                  </select>
+                  <button class="primary" type="submit">Add</button>
+                </form>
+                <div class="list compact" id="memberList"></div>
+              </div>
+
+              <div class="panel admin-only">
+                <h3>Create Task</h3>
+                <form class="task-form" id="taskForm">
+                  <input id="taskTitle" placeholder="Task title" required />
+                  <textarea id="taskDescription" placeholder="Task details"></textarea>
+                  <div class="form-row">
+                    <input id="taskDueDate" type="date" required />
+                    <select id="taskPriority">
+                      <option>Medium</option>
+                      <option>High</option>
+                      <option>Low</option>
+                    </select>
+                  </div>
+                  <select id="taskAssignee"></select>
+                  <button class="primary" type="submit">Create Task</button>
+                </form>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="section-head">
+                <h3>Tasks</h3>
+                <select id="statusFilter">
+                  <option value="">All statuses</option>
+                  <option>To Do</option>
+                  <option>In Progress</option>
+                  <option>Done</option>
+                </select>
+              </div>
+              <div class="task-board" id="taskBoard"></div>
+            </section>
+          </div>
+        </section>
+      </section>
+
+      <div class="toast" id="toast"></div>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
