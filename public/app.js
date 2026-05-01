@@ -251,7 +251,7 @@ elements.authForm.addEventListener("submit", async (event) => {
     });
     saveSession(data);
     showApp();
-    toast("Welcome in.");
+    toast("Logged in successfully.");
   } catch (error) {
     elements.authMessage.textContent = error.message;
   }

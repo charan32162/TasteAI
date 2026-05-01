@@ -7,16 +7,20 @@ GitHub Repository:
 Add your GitHub repository URL here after pushing the code.
 
 Overview:
-Team Task Manager is a full-stack web application for creating projects, adding team members, assigning tasks, and tracking progress with Admin and Member access levels.
+This is a full-stack task management application built for the assignment. It allows users to sign up, create projects, add team members, assign tasks, and track the progress of work inside each project.
+
+I kept the app simple and focused on the required features: authentication, project/team management, task assignment, dashboard counts, database relationships, and role-based access.
 
 Features:
-- Signup and login with JWT authentication.
-- Project creation, where the creator automatically becomes Admin.
-- Admins can add or remove project members.
-- Admins can create, assign, update, and delete tasks.
-- Members can view assigned projects and update only their assigned tasks.
-- Dashboard metrics for total tasks, status counts, tasks per user, and overdue tasks.
-- PostgreSQL database with relationships between users, projects, memberships, and tasks.
+- User signup and login.
+- Passwords are hashed before saving.
+- JWT is used for protected API routes.
+- A user who creates a project becomes the Admin of that project.
+- Admin can add/remove project members.
+- Admin can create, assign, update, and delete tasks.
+- Member can view projects they are part of.
+- Member can update only their own assigned tasks.
+- Dashboard shows total tasks, tasks by status, tasks per user, and overdue tasks.
 
 Tech Stack:
 - Frontend: HTML, CSS, JavaScript
@@ -24,6 +28,12 @@ Tech Stack:
 - Database: PostgreSQL
 - Authentication: JWT and bcrypt password hashing
 - Deployment target: Railway
+
+Database Tables:
+- users
+- projects
+- project_members
+- tasks
 
 Local Setup:
 1. Install Node.js 18 or newer.
@@ -68,15 +78,24 @@ API Summary:
 - GET /api/projects/:projectId/dashboard
 
 Demo Video Checklist:
-1. Show signup and login.
-2. Create a project.
-3. Add another registered user as Member.
-4. Create and assign tasks with due date and priority.
-5. Update task status.
-6. Show dashboard counts and overdue tasks.
-7. Briefly explain Admin versus Member permissions.
+In the demo video I will show:
+1. Signup and login.
+2. Creating a project.
+3. Adding a second user as a project member.
+4. Creating a task with due date and priority.
+5. Assigning the task to a user.
+6. Updating task status.
+7. Dashboard values.
+8. Difference between Admin and Member access.
 
 Notes:
 - The database tables are created automatically on server startup.
 - A user must sign up before an Admin can add that user's email to a project.
 - Members only see and update tasks assigned to them.
+- I used a single Express server to serve both the REST APIs and the frontend so deployment on Railway is simpler.
+
+Possible Improvements:
+- Add project invite links.
+- Add task comments or attachments.
+- Add email notifications for overdue tasks.
+- Add edit forms for project details.
