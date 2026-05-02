@@ -2,6 +2,10 @@
 
 This is my full-stack Team Task Manager assignment project. Users can create projects, add members, assign tasks, update task status, and check dashboard counts. The project also includes Admin/Member role-based access.
 
+Live app: https://team-task-manager-production-e47d.up.railway.app
+
+GitHub repo: https://github.com/charan32162/team-task-manager
+
 ## Features
 
 - Signup and login with JWT authentication

@@ -1,10 +1,10 @@
 Team Task Manager
 
 Live URL:
-Add your Railway public URL here after deployment.
+https://team-task-manager-production-e47d.up.railway.app
 
 GitHub Repository:
-Add your GitHub repository URL here after pushing the code.
+https://github.com/charan32162/team-task-manager
 
 Overview:
 This is a full-stack task management application built for the assignment. It allows users to sign up, create projects, add team members, assign tasks, and track the progress of work inside each project.
