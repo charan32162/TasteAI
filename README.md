@@ -6,7 +6,7 @@ This is my full-stack Team Task Manager assignment project. Users can create pro
 
 - Signup and login with JWT authentication
 - Password hashing using bcrypt
-- Project creation and team members
+- Project creation, deletion, and team members
 - Admin and Member roles
 - Task creation, assignment, priority, due date, and status
 - Dashboard for total tasks, status counts, tasks per user, and overdue tasks

@@ -260,6 +260,15 @@ app.post("/api/projects", auth, async (req, res, next) => {
   }
 });
 
+app.delete("/api/projects/:projectId", auth, requireProjectMember, requireAdmin, async (req, res, next) => {
+  try {
+    await query("DELETE FROM projects WHERE id = $1", [req.projectId]);
+    res.status(204).end();
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/api/projects/:projectId/members", auth, requireProjectMember, async (req, res, next) => {
   try {
     const result = await query(

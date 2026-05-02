@@ -68,6 +68,7 @@ API Summary:
 - POST /api/auth/login
 - GET /api/projects
 - POST /api/projects
+- DELETE /api/projects/:projectId
 - GET /api/projects/:projectId/members
 - POST /api/projects/:projectId/members
 - DELETE /api/projects/:projectId/members/:userId

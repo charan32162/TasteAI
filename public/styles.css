@@ -289,6 +289,13 @@ select:focus {
   gap: 16px;
 }
 
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(140px, 1fr));
@@ -475,6 +482,7 @@ select:focus {
 
   .workspace-header,
   .section-head,
+  .header-actions,
   .compact-row {
     display: grid;
   }

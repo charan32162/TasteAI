@@ -30,6 +30,7 @@ const elements = {
   activeProjectName: $("#activeProjectName"),
   activeProjectDescription: $("#activeProjectDescription"),
   roleLabel: $("#roleLabel"),
+  deleteProjectButton: $("#deleteProjectButton"),
   metrics: $("#metrics"),
   memberForm: $("#memberForm"),
   memberEmail: $("#memberEmail"),
@@ -368,6 +369,23 @@ elements.taskBoard.addEventListener("click", async (event) => {
 });
 
 $("#refreshButton").addEventListener("click", () => loadProjectDetails().catch((error) => toast(error.message)));
+elements.deleteProjectButton.addEventListener("click", async () => {
+  if (!state.activeProject || state.activeProject.role !== "Admin") return;
+  const confirmed = confirm(`Delete project "${state.activeProject.name}"? This will also delete its tasks and members.`);
+  if (!confirmed) return;
+
+  try {
+    await api(`/api/projects/${state.activeProject.id}`, { method: "DELETE" });
+    state.activeProject = null;
+    state.members = [];
+    state.tasks = [];
+    state.dashboard = null;
+    await loadProjects();
+    toast("Project deleted.");
+  } catch (error) {
+    toast(error.message);
+  }
+});
 elements.statusFilter.addEventListener("change", () => renderTasks(state.activeProject?.role === "Admin"));
 $("#logoutButton").addEventListener("click", () => {
   clearSession();
