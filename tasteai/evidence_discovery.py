@@ -114,6 +114,8 @@ def search_menu_evidence(
     budget_max: int | None = None,
     limit: int = 10,
     restaurant_identity_ids: set[str] | None = None,
+    mode: str = "auto",
+    known_dish_names: set[str] | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     if not isinstance(query, str) or len(query) > 500:
@@ -122,6 +124,10 @@ def search_menu_evidence(
         raise ValueError("Evidence search limit must be between 1 and 50.")
 
     intent = parse_intent(query, budget_max)
+    if mode != "auto":
+        if mode not in {"usual", "different", "surprise"}:
+            raise ValueError("Evidence recommendation mode is invalid.")
+        intent["recommendation_mode"] = mode
     dish_query = extract_requested_dish(query, intent)
     policy = evidence_stale_policy()
     weights = evidence_ranking_weights()
@@ -267,6 +273,20 @@ def search_menu_evidence(
                 }
                 for key, value in scores.items()
             },
+        }
+        normalized_candidate_name = candidate["dish"]["normalized_name"]
+        known = normalized_candidate_name in (known_dish_names or set())
+        if intent["recommendation_mode"] == "usual":
+            candidate["ranking"]["score"] = round(
+                candidate["ranking"]["score"] + (8.0 if known else 0.0), 2
+            )
+        elif intent["recommendation_mode"] in {"different", "surprise"}:
+            candidate["ranking"]["score"] = round(
+                candidate["ranking"]["score"] + (8.0 if not known else -8.0), 2
+            )
+        candidate["personalization"] = {
+            "mode": intent["recommendation_mode"],
+            "known_from_history": known,
         }
         candidate["why"] = _grounded_explanation(
             candidate,

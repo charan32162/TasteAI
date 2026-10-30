@@ -6,6 +6,7 @@ const state = {
   guestTried: new Set(),
   guestHidden: new Set(),
   lastQuery: "",
+  mode: "auto",
   searchVersion: 0,
   locationProvider: null
 };
@@ -103,7 +104,8 @@ function requestBody(query = $("#search-input").value) {
     query,
     budget_max: activeBudget(),
     exploration: Number($("#explore-range").value) / 100,
-    limit: 12
+    limit: 12,
+    mode: state.mode
   };
 }
 
@@ -117,11 +119,14 @@ function renderCard(item, interactive = signedIn(), bestMatch = false) {
     <span class="attribute-tag">${escapeHtml(feature === "portion_size" ? "portion" : feature)} ${escapeHtml(item.attributes[feature])}/10</span>
   `).join("");
   const guestTried = state.guestTried.has(item.dish_id);
+  const feedbackTarget = item.evidence?.evidence_id
+    ? `data-evidence-id="${escapeHtml(item.evidence.evidence_id)}"`
+    : `data-id="${escapeHtml(item.dish_id)}"`;
   const actions = interactive ? `
     <div class="card-actions">
-      <button class="button-primary" data-action="tried" data-id="${escapeHtml(item.dish_id)}">I tried it</button>
-      <button class="icon-action" data-action="save" data-id="${escapeHtml(item.dish_id)}" aria-label="Save ${escapeHtml(item.name)}">♡</button>
-      <button class="icon-action" data-action="reject" data-id="${escapeHtml(item.dish_id)}" aria-label="Not for me: ${escapeHtml(item.name)}">×</button>
+      <button class="button-primary" data-action="tried" ${feedbackTarget}>I tried it</button>
+      <button class="icon-action" data-action="save" ${feedbackTarget} aria-label="Save ${escapeHtml(item.name)}">♡</button>
+      <button class="icon-action" data-action="reject" ${feedbackTarget} aria-label="Not for me: ${escapeHtml(item.name)}">×</button>
     </div>
   ` : `
     <div class="card-actions guest-card-actions">
@@ -679,9 +684,14 @@ $("#location-nearby-submit").addEventListener("click", async (event) => {
 
 document.querySelectorAll("[data-prompt]").forEach((button) => button.addEventListener("click", async () => {
   const prompt = button.dataset.prompt;
+  state.mode = button.dataset.mode || "auto";
   $("#search-input").value = prompt;
   await discover(prompt);
 }));
+
+$("#search-input").addEventListener("input", () => {
+  state.mode = "auto";
+});
 
 $("#explore-range").addEventListener("input", (event) => {
   const value = Number(event.target.value);
@@ -714,7 +724,9 @@ $("#results-shell").addEventListener("click", async (event) => {
   if (!button) return;
   button.disabled = true;
   try {
-    const payload = { dish_id: button.dataset.id, action: button.dataset.action };
+    const payload = { action: button.dataset.action };
+    if (button.dataset.evidenceId) payload.evidence_id = Number(button.dataset.evidenceId);
+    else payload.dish_id = button.dataset.id;
     if (payload.action === "tried") {
       const rating = Number(prompt("How did you like it? Rate from 1 to 5.", "4"));
       if (Number.isInteger(rating) && rating >= 1 && rating <= 5) payload.rating = rating;

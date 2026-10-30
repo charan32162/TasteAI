@@ -104,6 +104,12 @@ class RestaurantIdentity(Base):
     longitude: Mapped[float | None] = mapped_column(Float)
     website_domain: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+        nullable=False,
+    )
 
 
 class RestaurantIdentityLink(Base):
@@ -405,7 +411,11 @@ class FoodEvent(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    dish_id: Mapped[str] = mapped_column(ForeignKey("dishes.id", ondelete="CASCADE"), index=True)
+    dish_id: Mapped[str | None] = mapped_column(ForeignKey("dishes.id", ondelete="CASCADE"), index=True)
+    evidence_id: Mapped[int | None] = mapped_column(
+        ForeignKey("menu_item_evidence.id", ondelete="SET NULL"),
+        index=True,
+    )
     kind: Mapped[str] = mapped_column(String(20), nullable=False)
     rating: Mapped[int | None] = mapped_column(Integer)
     note: Mapped[str | None] = mapped_column(Text)

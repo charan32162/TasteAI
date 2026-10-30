@@ -184,6 +184,14 @@ def parse_intent(query: str, budget_max: int | None = None) -> dict[str, Any]:
     vegetarian = vegan or bool(re.search(r"\b(?:vegetarian|veggie|veg)\b", text))
     filling = "portion_size" in attribute_targets
     adventure = bool(re.search(r"\b(?:adventurous|surprise|different|new|never tried|outside my usual|outside my usual choices)\b", text))
+    if re.search(r"\b(?:usual|usually|normally|what i like|what i enjoy)\b", text):
+        recommendation_mode = "usual"
+    elif re.search(r"\b(?:different|something new|outside my usual)\b", text):
+        recommendation_mode = "different"
+    elif re.search(r"\b(?:surprise|never tried|adventurous)\b", text):
+        recommendation_mode = "surprise"
+    else:
+        recommendation_mode = "auto"
     affordable = bool(re.search(r"\b(?:cheap|cheaper|affordable|budget[- ]friendly|low[- ]cost)\b", text))
     value_requested = bool(re.search(r"\b(?:good value|value for money|best value|great value)\b", text))
     unavailable_signals = []
@@ -235,6 +243,7 @@ def parse_intent(query: str, budget_max: int | None = None) -> dict[str, Any]:
         "affordable": affordable,
         "value_requested": value_requested,
         "adventure_level": "high" if adventure else "medium",
+        "recommendation_mode": recommendation_mode,
         "ambiguous": ambiguous,
         "restaurant_discovery": restaurant_discovery,
         "location_requested": location_requested,
@@ -301,6 +310,31 @@ def update_profile_from_rating(profile: TasteProfile, dish: Dish, rating: int) -
     if rating >= 4:
         liked = {item.lower() for item in profile.liked_ingredients}
         profile.liked_ingredients = list(profile.liked_ingredients) + [item for item in dish.ingredients if item.lower() not in liked][:3]
+
+
+def update_profile_from_feedback(profile: TasteProfile, action: str) -> str | None:
+    adjustments = {
+        "too_expensive": ("price_sensitivity", 1),
+        "too_spicy": ("spice", -1),
+        "not_spicy_enough": ("spice", 1),
+        "too_oily": ("oiliness", -1),
+    }
+    change = adjustments.get(action)
+    if change is None:
+        return None
+    feature, delta = change
+    features = dict(profile.features)
+    provenance = dict(profile.feature_provenance or {})
+    if provenance.get(feature) == "explicit":
+        return None
+    previous = int(features.get(feature, 5))
+    updated = max(0, min(10, previous + delta))
+    features[feature] = updated
+    if updated != previous:
+        provenance[feature] = "learned"
+    profile.features = features
+    profile.feature_provenance = provenance
+    return feature if updated != previous else None
 
 
 def _matches_term(dish: Dish, term: str) -> bool:
@@ -430,6 +464,7 @@ def rank_dishes(
 ) -> list[dict[str, Any]]:
     weights = ranking_weights()
     known = {event.dish_id for event in events if event.kind in {"tried", "like", "dislike"}}
+    mode = intent.get("recommendation_mode", "auto")
     now = datetime.now(timezone.utc)
     rejected_recent = {
         event.dish_id for event in events
@@ -506,6 +541,14 @@ def rank_dishes(
         else:
             price_score = max(0.0, 100.0 - (price / budget) * 35.0)
         novelty_score = 18.0 if dish.id in known else 100.0
+        if mode == "usual":
+            novelty_score = 100.0 if dish.id in known else 62.0
+            if dish_ratings:
+                history_score = max(history_score or 0.0, 70.0)
+        elif mode in {"different", "surprise"}:
+            novelty_score = 0.0 if dish.id in known else 100.0
+            if dish.id in known:
+                history_score = min(history_score if history_score is not None else 50.0, 20.0)
         if dish.id in rejected_recent:
             novelty_score = min(novelty_score, 0.0)
         blended_weights = dict(weights)
@@ -544,6 +587,10 @@ def rank_dishes(
             for key in components if components[key] is not None
         ) / available_weight) if available_weight else 0
         explanations = _intent_explanations(dish, intent)
+        if mode == "usual" and dish.id in known:
+            explanations.append("This is close to foods you have previously tried or liked.")
+        elif mode in {"different", "surprise"} and dish.id not in known:
+            explanations.append("This keeps your hard constraints while exploring beyond your recent choices.")
         if dish_ratings:
             explanations.append(f"Your previous rating for this dish averaged {sum(dish_ratings) / len(dish_ratings):.1f}/5.")
         if profile.preferred_cuisines and dish.cuisine in profile.preferred_cuisines:

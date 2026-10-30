@@ -56,6 +56,15 @@ class FoodSearchRequest(BaseModel):
     budget_max: int | None = Field(default=None, ge=1, le=100000)
     exploration: float = Field(default=0.3, ge=0, le=1)
     limit: int = Field(default=10, ge=1, le=50)
+    mode: str = Field(default="auto", max_length=20)
+
+    @field_validator("mode")
+    @classmethod
+    def validate_mode(cls, value: str) -> str:
+        value = value.strip().lower()
+        if value not in {"auto", "usual", "different", "surprise"}:
+            raise ValueError("Mode must be auto, usual, different, or surprise.")
+        return value
 
 
 class EvidenceSearchRequest(BaseModel):
@@ -270,6 +279,40 @@ class RestaurantDiscoveryRequest(BaseModel):
         return self
 
 
+class RestaurantIdentityCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+    address: str | None = Field(default=None, max_length=500)
+    phone: str | None = Field(default=None, max_length=80)
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+    website_url: str | None = Field(default=None, max_length=2048)
+    provider_name: str | None = Field(default=None, min_length=1, max_length=100)
+    provider_place_id: str | None = Field(default=None, min_length=1, max_length=255)
+
+    @field_validator("name", "address", "phone", "website_url", "provider_name", "provider_place_id")
+    @classmethod
+    def strip_identity_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = " ".join(value.split())
+        return value or None
+
+    @field_validator("latitude", "longitude", mode="before")
+    @classmethod
+    def reject_boolean_identity_coordinates(cls, value: object) -> object:
+        if isinstance(value, bool):
+            raise ValueError("Coordinates must be numeric latitude/longitude values.")
+        return value
+
+    @model_validator(mode="after")
+    def validate_identity_coordinates(self) -> "RestaurantIdentityCreateRequest":
+        if (self.latitude is None) != (self.longitude is None):
+            raise ValueError("Provide both latitude and longitude.")
+        if (self.provider_name is None) != (self.provider_place_id is None):
+            raise ValueError("Provide both provider name and provider place ID.")
+        return self
+
+
 class GroupParticipantRequest(BaseModel):
     name: str = Field(min_length=1, max_length=60)
     query: str = Field(default="", max_length=500)
@@ -320,7 +363,8 @@ class TasteTransferRequest(BaseModel):
 
 
 class FoodFeedbackRequest(BaseModel):
-    dish_id: str = Field(min_length=1, max_length=80)
+    dish_id: str | None = Field(default=None, min_length=1, max_length=80)
+    evidence_id: int | None = Field(default=None, ge=1)
     action: str
     rating: int | None = Field(default=None, ge=1, le=5)
     note: str | None = Field(default=None, max_length=1000)
@@ -328,9 +372,19 @@ class FoodFeedbackRequest(BaseModel):
     @field_validator("action")
     @classmethod
     def validate_action(cls, value: str) -> str:
-        if value not in {"tried", "like", "dislike", "save", "reject"}:
-            raise ValueError("Action must be tried, like, dislike, save, or reject")
+        if value not in {
+            "tried", "like", "dislike", "save", "reject",
+            "too_expensive", "too_spicy", "not_spicy_enough", "too_oily",
+            "wrong_dish", "different",
+        }:
+            raise ValueError("Unsupported feedback action.")
         return value
+
+    @model_validator(mode="after")
+    def require_feedback_target(self):
+        if self.dish_id is None and self.evidence_id is None:
+            raise ValueError("Feedback must reference a dish or approved evidence.")
+        return self
 
 
 class FoodMemoryRequest(BaseModel):

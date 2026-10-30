@@ -8,6 +8,7 @@ from tasteai.engine import (
     group_recommendations,
     parse_intent,
     rank_dishes,
+    update_profile_from_feedback,
     update_profile_from_rating,
     taste_transfer_comparison,
 )
@@ -42,6 +43,27 @@ def profile():
 
 
 class EngineTests(unittest.TestCase):
+    def test_recommendation_modes_are_explicit_and_deterministic(self):
+        self.assertEqual(parse_intent("Show me something like what I usually enjoy")["recommendation_mode"], "usual")
+        self.assertEqual(parse_intent("Give me something different")["recommendation_mode"], "different")
+        self.assertEqual(parse_intent("Surprise me")["recommendation_mode"], "surprise")
+
+    def test_feedback_learning_is_bounded_and_provenanced(self):
+        taste_profile = profile()
+        self.assertEqual(update_profile_from_feedback(taste_profile, "too_spicy"), "spice")
+        self.assertEqual(taste_profile.features["spice"], 4)
+        self.assertEqual(taste_profile.feature_provenance["spice"], "learned")
+        for _ in range(20):
+            update_profile_from_feedback(taste_profile, "too_spicy")
+        self.assertEqual(taste_profile.features["spice"], 0)
+
+    def test_structured_feedback_preserves_explicit_features(self):
+        taste_profile = profile()
+        taste_profile.feature_provenance = {"spice": "explicit"}
+        self.assertIsNone(update_profile_from_feedback(taste_profile, "too_spicy"))
+        self.assertEqual(taste_profile.features["spice"], 5)
+        self.assertEqual(taste_profile.feature_provenance["spice"], "explicit")
+
     def test_parses_food_intent_budget_and_exclusions(self):
         intent = parse_intent("I want chicken but not biryani, spicy, under ₹300")
         self.assertEqual(intent["protein"], "chicken")

@@ -80,6 +80,44 @@ class ApiTests(unittest.TestCase):
         self.assertIn("place.dish_evidence", script.text)
         self.assertIn("Evidence ranking estimate", script.text)
 
+    def test_reviewer_can_register_and_read_provider_backed_identity_idempotently(self):
+        auth = self.register("identity-reviewer@example.test")
+        user_id = self.client.get("/api/v1/users/me", headers=auth).json()["id"]
+        payload = {
+            "name": "M Hotel",
+            "address": "Chintalapudi",
+            "provider_name": "google_places",
+            "provider_place_id": "ChIJX0D-IBpjNjoRtpb30Dyv4_E",
+        }
+        with patch.dict(os.environ, {"TASTEAI_MENU_PHOTO_REVIEWER_USER_IDS": str(user_id)}):
+            created = self.client.post(
+                "/api/v1/menu-evidence/restaurant-identities",
+                headers=auth,
+                json=payload,
+            )
+            self.assertEqual(created.status_code, 201, created.text)
+            body = created.json()
+            self.assertTrue(body["created"])
+            identity = body["identity"]
+            self.assertEqual(identity["provider_links"][0]["provider_name"], "google_places")
+            self.assertEqual(identity["provider_links"][0]["provider_place_id"], payload["provider_place_id"])
+            self.assertIsNotNone(identity["updated_at"])
+
+            repeated = self.client.post(
+                "/api/v1/menu-evidence/restaurant-identities",
+                headers=auth,
+                json=payload,
+            )
+            self.assertEqual(repeated.status_code, 201, repeated.text)
+            self.assertFalse(repeated.json()["created"])
+            self.assertEqual(repeated.json()["identity"]["id"], identity["id"])
+
+            fetched = self.client.get(
+                f"/api/v1/menu-evidence/restaurant-identities/{identity['id']}"
+            )
+            self.assertEqual(fetched.status_code, 200, fetched.text)
+            self.assertEqual(fetched.json()["id"], identity["id"])
+
     def test_menu_photo_proposals_require_review_before_evidence_and_commit_idempotently(self):
         auth = self.register("menu-photo-reviewer@example.test")
         user_id = self.client.get("/api/v1/users/me", headers=auth).json()["id"]
@@ -473,6 +511,24 @@ class ApiTests(unittest.TestCase):
             index = self.client.post("/api/v1/rag/index", headers=auth, json={"limit": 20})
             self.assertEqual(index.status_code, 200, index.text)
             self.assertEqual(index.json()["indexed"], 1)
+            recommendation = self.client.post(
+                "/api/v1/food/recommend",
+                headers=auth,
+                json={"query": "Chicken Biryani under ₹300", "mode": "usual"},
+            )
+            self.assertEqual(recommendation.status_code, 200, recommendation.text)
+            recommendation_body = recommendation.json()
+            self.assertEqual(recommendation_body["recommendations"][0]["evidence"]["evidence_id"], evidence.id)
+            self.assertEqual(recommendation_body["recommendations"][0]["source_label"], "approved menu evidence")
+            self.assertEqual(recommendation_body["recommendations"][0]["evidence"]["provenance"]["authorization_status"], "approved")
+            feedback = self.client.post(
+                "/api/v1/food/feedback",
+                headers=auth,
+                json={"evidence_id": evidence.id, "action": "too_expensive"},
+            )
+            self.assertEqual(feedback.status_code, 200, feedback.text)
+            self.assertEqual(feedback.json()["evidence_id"], evidence.id)
+            self.assertEqual(feedback.json()["learned_feature"], "price_sensitivity")
             query = self.client.post(
                 "/api/v1/rag/query",
                 json={"query": "Chicken Biryani", "budget_max": 300},
@@ -556,6 +612,35 @@ class ApiTests(unittest.TestCase):
         self.assertIn("Indian", profile["preferred_cuisines"])
         self.assertEqual(len(self.client.get("/api/v1/food/history", headers=headers).json()), 1)
 
+    def test_personalized_modes_and_structured_feedback_learning(self):
+        headers = self.register("modes@example.test")
+        usual = self.client.post(
+            "/api/v1/food/recommend",
+            headers=headers,
+            json={"query": "Show me something like what I usually enjoy", "mode": "usual"},
+        )
+        self.assertEqual(usual.status_code, 200, usual.text)
+        self.assertEqual(usual.json()["intent"]["recommendation_mode"], "usual")
+        self.assertEqual(usual.json()["personalization"]["mode"], "usual")
+
+        different = self.client.post(
+            "/api/v1/food/recommend",
+            headers=headers,
+            json={"query": "Give me something different", "mode": "different"},
+        )
+        self.assertEqual(different.status_code, 200, different.text)
+        self.assertEqual(different.json()["intent"]["recommendation_mode"], "different")
+
+        dish_id = different.json()["recommendations"][0]["dish_id"]
+        feedback = self.client.post(
+            "/api/v1/food/feedback",
+            headers=headers,
+            json={"dish_id": dish_id, "action": "too_spicy"},
+        )
+        self.assertEqual(feedback.status_code, 200, feedback.text)
+        self.assertEqual(feedback.json()["learned_feature"], "spice")
+        self.assertEqual(feedback.json()["learning"], "bounded_one_point_adjustment")
+
     def test_explicit_taste_feature_is_not_overwritten_by_rating_learning(self):
         headers = self.register()
         updated = self.client.patch(
@@ -572,6 +657,16 @@ class ApiTests(unittest.TestCase):
             json={"dish_id": "demo-spicy-paneer", "action": "tried", "rating": 5},
         )
         self.assertEqual(feedback.status_code, 200, feedback.text)
+        profile = self.client.get("/api/v1/users/me/taste-profile", headers=headers).json()
+        self.assertEqual(profile["features"]["spice"], 8)
+        self.assertEqual(profile["feature_provenance"]["spice"], "explicit")
+        structured = self.client.post(
+            "/api/v1/food/feedback",
+            headers=headers,
+            json={"dish_id": "demo-spicy-paneer", "action": "too_spicy"},
+        )
+        self.assertEqual(structured.status_code, 200, structured.text)
+        self.assertIsNone(structured.json()["learned_feature"])
         profile = self.client.get("/api/v1/users/me/taste-profile", headers=headers).json()
         self.assertEqual(profile["features"]["spice"], 8)
         self.assertEqual(profile["feature_provenance"]["spice"], "explicit")

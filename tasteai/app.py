@@ -26,12 +26,28 @@ from .engine import (
     intent_weights,
     ranking_weights,
     taste_transfer_comparison,
+    update_profile_from_feedback,
     update_profile_from_rating,
 )
 from .evidence_discovery import search_menu_evidence
 from .agent import AgentState, MAX_AGENT_STEPS, MAX_AGENT_TOOL_CALLS, run_bounded_food_flow
 from .ai_providers import AIProviderError, HashEmbeddingProvider, QueryIntent, configured_embedding_provider, configured_llm_provider, llm_provider_configured
-from .models import Dish, EvidenceChunk, FoodEvent, FoodMemory, MenuDocument, MenuItemProposal, Restaurant, TasteProfile, User, utc_now
+from .models import (
+    Dish,
+    EvidenceChunk,
+    FoodEvent,
+    FoodMemory,
+    MenuDocument,
+    MenuItemEvidence,
+    MenuItemProposal,
+    MenuSource,
+    Restaurant,
+    RestaurantIdentity,
+    RestaurantIdentityLink,
+    TasteProfile,
+    User,
+    utc_now,
+)
 from .providers import DemoMenuProvider, FictionalDemoProvider, UnknownMenuProvider
 from .location_providers import (
     GeoPoint,
@@ -40,7 +56,15 @@ from .location_providers import (
     configured_restaurant_provider,
     restaurant_provider_status,
 )
-from .menu_evidence import MenuEvidenceError, restaurant_menu_evidence
+from .menu_evidence import (
+    MenuEvidenceError,
+    RestaurantIdentityCandidate,
+    create_restaurant_identity,
+    normalize_dish_name,
+    restaurant_menu_evidence,
+    resolve_restaurant_identity,
+)
+from .menu_evidence import _is_stale
 from .menu_photos import (
     MenuPhotoError,
     NoMenuPhotoExtractor,
@@ -71,6 +95,7 @@ from .schemas import (
     RagQueryRequest,
     ReviewAnalysisRequest,
     RestaurantDiscoveryRequest,
+    RestaurantIdentityCreateRequest,
     TasteTransferRequest,
     TasteProfileUpdate,
 )
@@ -307,9 +332,23 @@ def search_results(db: Session, user: User | None, request_data: FoodSearchReque
         dietary_restrictions=[],
     )
     intent = parse_intent(request_data.query, request_data.budget_max)
+    if request_data.mode != "auto":
+        intent["recommendation_mode"] = request_data.mode
     dishes = db.scalars(select(Dish).options(joinedload(Dish.restaurant))).all()
-    events = list(db.scalars(select(FoodEvent).where(FoodEvent.user_id == user.id).order_by(FoodEvent.created_at))) if user else []
+    events = list(
+        db.scalars(
+            select(FoodEvent)
+            .options(joinedload(FoodEvent.dish))
+            .where(FoodEvent.user_id == user.id)
+            .order_by(FoodEvent.created_at)
+        )
+    ) if user else []
     memories = list(db.scalars(select(FoodMemory).where(FoodMemory.user_id == user.id))) if user else []
+    known_dish_names = {
+        normalize_dish_name(event.dish.name)
+        for event in events
+        if event.dish is not None and event.kind in {"tried", "save"}
+    }
     profile_exploration = int(profile.features.get("adventure", 4)) / 10
     exploration = max(0.0, min(1.0, request_data.exploration * 0.75 + profile_exploration * 0.25))
     has_food_intent = any((
@@ -320,12 +359,56 @@ def search_results(db: Session, user: User | None, request_data: FoodSearchReque
         intent["adventure_level"] == "high",
     ))
     location_only = bool(intent["location_requested"] or intent["restaurant_discovery"]) and not has_food_intent
-    ranked = [] if location_only else rank_dishes(dishes, profile, events, memories, intent, exploration, request_data.limit)
+    evidence_result = None
+    if not location_only:
+        evidence_result = search_menu_evidence(
+            db,
+            request_data.query,
+            profile=profile if user else None,
+            budget_max=request_data.budget_max,
+            limit=request_data.limit,
+            mode=request_data.mode,
+            known_dish_names=known_dish_names,
+        )
+    if evidence_result and evidence_result["results"]:
+        ranked = [
+            {
+                "dish_id": f"evidence:{item['evidence_id']}",
+                "name": item["dish"]["name"],
+                "description": item["dish"]["description"],
+                "restaurant": item["restaurant"]["name"],
+                "price_inr": int(Decimal(item["price"]["amount"])) if item["price"]["amount"] is not None else None,
+                "source_label": "approved menu evidence",
+                "score": item["ranking"]["score"],
+                "components": item["ranking"]["components"],
+                "why": item["why"],
+                "evidence": item,
+            }
+            for item in evidence_result["results"]
+        ]
+    else:
+        ranked = [] if location_only else rank_dishes(
+            dishes, profile, events, memories, intent, exploration, request_data.limit
+        )
     return {
         "intent": intent,
         "recommendations": ranked,
+        "evidence_search": evidence_result,
         "ranking_weights": ranking_weights(),
         "intent_weights": intent_weights(),
+        "personalization": {
+            "mode": intent["recommendation_mode"],
+            "authority_order": [
+                "safety_and_dietary_restrictions",
+                "explicit_exclusions",
+                "current_request",
+                "budget",
+                "location",
+                "contextual_preferences",
+                "taste_dna",
+                "exploration",
+            ],
+        },
         "guest_mode": user is None,
         "clarification": (
             "The demo catalog can't verify this dietary requirement; no dishes were recommended."
@@ -902,6 +985,70 @@ def discover_restaurant_candidates(
     return result
 
 
+def _restaurant_identity_payload(identity, db: Session) -> dict:
+    links = db.scalars(
+        select(RestaurantIdentityLink).where(
+            RestaurantIdentityLink.restaurant_identity_id == identity.id
+        ).order_by(RestaurantIdentityLink.id)
+    ).all()
+    return {
+        "id": identity.id,
+        "name": identity.name,
+        "normalized_name": identity.normalized_name,
+        "address": identity.address,
+        "phone": identity.phone,
+        "latitude": identity.latitude,
+        "longitude": identity.longitude,
+        "website_domain": identity.website_domain,
+        "created_at": identity.created_at,
+        "updated_at": identity.updated_at,
+        "provider_links": [
+            {
+                "provider_name": link.provider_name,
+                "provider_place_id": link.provider_place_id,
+                "created_at": link.created_at,
+            }
+            for link in links
+        ],
+    }
+
+
+@app.post("/api/v1/menu-evidence/restaurant-identities", status_code=status.HTTP_201_CREATED)
+def create_menu_evidence_restaurant_identity(
+    body: RestaurantIdentityCreateRequest,
+    db: Session = Depends(get_db),
+    _: User = Depends(current_menu_photo_reviewer),
+):
+    candidate = RestaurantIdentityCandidate(**body.model_dump())
+    try:
+        resolution = resolve_restaurant_identity(db, candidate)
+        if resolution.state.value == "conflict":
+            raise MenuEvidenceError("Restaurant identity conflicts with an existing provider association.")
+        if resolution.restaurant_identity_id:
+            identity = db.get(RestaurantIdentity, resolution.restaurant_identity_id)
+            if identity is None:
+                raise MenuEvidenceError("Resolved restaurant identity no longer exists.")
+            return {"created": False, "identity": _restaurant_identity_payload(identity, db)}
+        identity = create_restaurant_identity(db, candidate)
+        db.commit()
+        db.refresh(identity)
+        return {"created": True, "identity": _restaurant_identity_payload(identity, db)}
+    except MenuEvidenceError as error:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)) from error
+
+
+@app.get("/api/v1/menu-evidence/restaurant-identities/{identity_id}")
+def get_menu_evidence_restaurant_identity(
+    identity_id: str = PathParam(min_length=1, max_length=36),
+    db: Session = Depends(get_db),
+):
+    identity = db.get(RestaurantIdentity, identity_id)
+    if identity is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Restaurant identity not found.")
+    return _restaurant_identity_payload(identity, db)
+
+
 @app.get("/api/v1/restaurants/{restaurant_id}")
 def get_restaurant(restaurant_id: str, db: Session = Depends(get_db)):
     restaurant = db.scalar(select(Restaurant).options(joinedload(Restaurant.dishes)).where(Restaurant.id == restaurant_id))
@@ -1124,25 +1271,59 @@ def commit_menu_photo_document(
 
 @app.post("/api/v1/food/feedback")
 def food_feedback(body: FoodFeedbackRequest, db: Session = Depends(get_db), user: User = Depends(current_user)):
-    dish = db.get(Dish, body.dish_id)
-    if dish is None:
+    dish = db.get(Dish, body.dish_id) if body.dish_id else None
+    evidence = db.get(MenuItemEvidence, body.evidence_id) if body.evidence_id else None
+    if body.dish_id and dish is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dish not found.")
+    if body.evidence_id and evidence is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Menu evidence not found.")
+    if evidence is not None:
+        document = db.get(MenuDocument, evidence.menu_document_id)
+        source = db.scalar(
+            select(MenuSource)
+            .join(MenuDocument, MenuDocument.menu_source_id == MenuSource.id)
+            .where(MenuDocument.id == evidence.menu_document_id)
+        )
+        if (
+            source is None
+            or document is None
+            or source.authorization_status != "approved"
+            or evidence.evidence_state not in {"verified", "supported"}
+            or _is_stale(document, source, utc_now())
+        ):
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Feedback requires approved supported menu evidence.")
     rating = body.rating
     if rating is None and body.action in {"like", "dislike"}:
         rating = 5 if body.action == "like" else 1
-    kind = "save" if body.action == "save" else "reject" if body.action == "reject" else "tried"
-    event = FoodEvent(user_id=user.id, dish_id=dish.id, kind=kind, rating=rating, note=body.note)
+    kind = "save" if body.action == "save" else "reject" if body.action in {"reject", "wrong_dish", "different"} else body.action if body.action in {"too_expensive", "too_spicy", "not_spicy_enough", "too_oily"} else "tried"
+    event = FoodEvent(
+        user_id=user.id,
+        dish_id=dish.id if dish else None,
+        evidence_id=evidence.id if evidence else None,
+        kind=kind,
+        rating=rating,
+        note=body.note,
+    )
     db.add(event)
     profile = ensure_profile(db, user.id)
-    if rating is not None:
+    if rating is not None and dish is not None:
         update_profile_from_rating(profile, dish, rating)
+    learned_feature = update_profile_from_feedback(profile, body.action)
     if body.note:
         extracted = capture_memory(body.note)
         if extracted:
             subject, detail = extracted
             db.add(FoodMemory(user_id=user.id, kind="experience", subject=subject, detail=detail, permanence="inferred"))
     db.commit()
-    return {"recorded": True, "action": body.action, "profile_updated": rating is not None}
+    return {
+        "recorded": True,
+        "action": body.action,
+        "dish_id": dish.id if dish else None,
+        "evidence_id": evidence.id if evidence else None,
+        "profile_updated": rating is not None or learned_feature is not None,
+        "learned_feature": learned_feature,
+        "learning": "bounded_one_point_adjustment" if learned_feature else "interaction_recorded",
+    }
 
 
 def event_history(db: Session, user_id: int, kind: str | None = None) -> list[FoodEvent]:
