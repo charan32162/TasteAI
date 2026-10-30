@@ -32,6 +32,7 @@ class AgentState:
     explanation: dict[str, Any] | None = None
     final_response: dict[str, Any] | None = None
     errors: list[str] = field(default_factory=list)
+    audit: list[dict[str, Any]] = field(default_factory=list)
     steps: list[str] = field(default_factory=list)
     tool_calls: int = 0
 
@@ -55,13 +56,17 @@ def run_bounded_food_flow(
         raise AgentLimitError("Agent safety limits are invalid.")
     state.intent = understand(state.query)
     state.steps.append("understand_query")
+    state.audit.append({"step": "understand_query", "status": "ok", "tool_call": False})
     state.retrieved_context = retrieve(state.query)
     state.tool_calls += 1
     state.steps.append("retrieve_approved_evidence")
+    state.audit.append({"step": "retrieve_approved_evidence", "status": "ok", "tool_call": True, "read_only": True})
     state.ranking = rank(state)
     state.steps.append("deterministic_rank")
+    state.audit.append({"step": "deterministic_rank", "status": "ok", "tool_call": False})
     state.explanation = explain(state)
     state.steps.append("grounded_explanation")
+    state.audit.append({"step": "grounded_explanation", "status": "ok", "tool_call": False})
     if len(state.steps) > MAX_AGENT_STEPS or state.tool_calls > MAX_AGENT_TOOL_CALLS:
         raise AgentLimitError("Agent execution exceeded its configured limit.")
     state.final_response = {
@@ -69,6 +74,8 @@ def run_bounded_food_flow(
         "step_count": len(state.steps),
         "tool_call_count": state.tool_calls,
         "steps": list(state.steps),
+        "audit": list(state.audit),
+        "limits": {"max_steps": MAX_AGENT_STEPS, "max_tool_calls": MAX_AGENT_TOOL_CALLS},
         "explanation": state.explanation,
         "authority": {
             "intent": "deterministic_parser_with_optional_llm_hints",

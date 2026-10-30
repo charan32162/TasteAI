@@ -351,6 +351,17 @@ def llm_provider_configured() -> bool:
     )
 
 
+def llm_provider_status() -> dict[str, Any]:
+    configured = llm_provider_configured()
+    return {
+        "configured": configured,
+        "provider": "openai" if configured else None,
+        "mode": "optional_external" if configured else "deterministic_fallback",
+        "authority": "hints_only",
+        "network_calls": 0,
+    }
+
+
 def configured_embedding_provider() -> EmbeddingProvider:
     if (
         os.getenv("TASTEAI_ALLOW_EXTERNAL_EMBEDDINGS", "false").strip().casefold() == "true"
@@ -364,6 +375,24 @@ def configured_embedding_provider() -> EmbeddingProvider:
             timeout_seconds=timeout,
         )
     return HashEmbeddingProvider()
+
+
+def embedding_provider_status() -> dict[str, Any]:
+    external_enabled = (
+        os.getenv("TASTEAI_ALLOW_EXTERNAL_EMBEDDINGS", "false").strip().casefold() == "true"
+        and os.getenv("TASTEAI_EMBEDDING_PROVIDER", "openai").strip().casefold() == "openai"
+        and bool(os.getenv("OPENAI_API_KEY"))
+    )
+    return {
+        "configured": external_enabled,
+        "provider": "openai" if external_enabled else "tasteai_hash",
+        "model": os.getenv("TASTEAI_EMBEDDING_MODEL", "text-embedding-3-small") if external_enabled else HashEmbeddingProvider.model,
+        "mode": "optional_external" if external_enabled else "deterministic_lexical_fallback",
+        "semantic": external_enabled,
+        "authority": "retrieval_signal_only",
+        "vector_validation": "finite_bounded_dimensions",
+        "network_calls": 0,
+    }
 
 
 def _bounded_tokens(value: int) -> int:

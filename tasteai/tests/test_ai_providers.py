@@ -15,6 +15,8 @@ from tasteai.ai_providers import (
     QueryIntent,
     configured_embedding_provider,
     configured_llm_provider,
+    embedding_provider_status,
+    llm_provider_status,
 )
 
 
@@ -28,6 +30,8 @@ class AIProviderTests(unittest.TestCase):
             self.assertIsNone(configured_llm_provider())
             embedder = configured_embedding_provider()
             self.assertIsInstance(embedder, HashEmbeddingProvider)
+            self.assertEqual(embedding_provider_status()["mode"], "deterministic_lexical_fallback")
+            self.assertEqual(llm_provider_status()["authority"], "hints_only")
 
     def test_structured_output_is_validated_and_request_is_non_stored(self):
         requests = []

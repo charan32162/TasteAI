@@ -31,7 +31,7 @@ from .engine import (
 )
 from .evidence_discovery import search_menu_evidence
 from .agent import AgentState, MAX_AGENT_STEPS, MAX_AGENT_TOOL_CALLS, run_bounded_food_flow
-from .ai_providers import AIProviderError, HashEmbeddingProvider, QueryIntent, configured_embedding_provider, configured_llm_provider, llm_provider_configured
+from .ai_providers import AIProviderError, HashEmbeddingProvider, QueryIntent, configured_embedding_provider, configured_llm_provider, embedding_provider_status, llm_provider_configured, llm_provider_status
 from .models import (
     Dish,
     EvidenceChunk,
@@ -498,14 +498,9 @@ def providers_status():
 
 @app.get("/api/v1/ai/status")
 def ai_status(db: Session = Depends(get_db)):
-    llm_enabled = llm_provider_configured()
-    embeddings_enabled = (
-        os.getenv("TASTEAI_ALLOW_EXTERNAL_EMBEDDINGS", "false").strip().casefold() == "true"
-        and bool(os.getenv("OPENAI_API_KEY"))
-    )
     return {
-        "llm": {"status": "enabled" if llm_enabled else "disabled", "provider": "openai" if llm_enabled else None},
-        "embeddings": {"status": "external_enabled" if embeddings_enabled else "local_deterministic", "provider": "openai" if embeddings_enabled else "tasteai_hash"},
+        "llm": {"status": "enabled" if llm_provider_configured() else "disabled", **llm_provider_status()},
+        "embeddings": {"status": "external_enabled" if embedding_provider_status()["configured"] else "local_deterministic", **embedding_provider_status()},
         "rag": {"status": "ready" if db.scalar(select(EvidenceChunk.id).limit(1)) else "empty", "indexed_chunks": db.query(EvidenceChunk).count()},
         "ocr": menu_photo_extractor_status(),
         "agent": {
