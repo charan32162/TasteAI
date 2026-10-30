@@ -139,12 +139,13 @@ function renderCard(item, interactive = signedIn(), bestMatch = false) {
   return `
     <article class="dish-card${bestMatch ? " best-dish-card" : ""}">
       ${bestMatch ? `<span class="best-match-badge">BEST MATCH</span>` : ""}
-      <div class="dish-topline"><span class="cuisine-tag">${escapeHtml(item.cuisine || "")}</span><span class="dish-price">₹${escapeHtml(item.price_inr)}</span></div>
+      <div class="dish-topline"><span class="cuisine-tag">${escapeHtml(item.cuisine || (item.evidence ? "menu evidence" : ""))}</span><span class="dish-price">${item.price_inr == null ? "Price unknown" : `₹${escapeHtml(item.price_inr)}`}</span></div>
       <h3>${escapeHtml(item.name)}</h3><p class="restaurant-name">${escapeHtml(item.restaurant || "Demo Kitchen")}</p>
       <p class="dish-description">${escapeHtml(item.description)}</p>
-      <div class="diet-row"><span class="diet-dot ${item.vegetarian ? "veg" : "nonveg"}"></span>${item.vegetarian ? "Vegetarian" : "Non-vegetarian"}<span class="demo-chip">DEMO</span></div>
+      <div class="diet-row">${item.evidence ? "Approved menu evidence" : `<span class="diet-dot ${item.vegetarian ? "veg" : "nonveg"}"></span>${item.vegetarian ? "Vegetarian" : "Non-vegetarian"}`}<span class="demo-chip">${item.evidence ? "EVIDENCE" : "DEMO"}</span></div>
       ${attributeTags ? `<div class="attribute-tags">${attributeTags}</div>` : ""}
       ${score}
+      ${item.explanation?.summary ? `<p class="explanation-summary"><strong>Why this for you:</strong> ${escapeHtml(item.explanation.summary)}</p>` : ""}
       ${item.why?.length ? `<ul class="why-list">${item.why.map((reason) => `<li>${escapeHtml(reason)}</li>`).join("")}</ul>` : ""}
       ${actions}<p class="provenance">${escapeHtml(item.source_label || "fictional demo catalog")}${signedIn() ? "" : " · guest mode"}</p>
     </article>`;

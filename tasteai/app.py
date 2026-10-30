@@ -349,6 +349,18 @@ def search_results(db: Session, user: User | None, request_data: FoodSearchReque
         for event in events
         if event.dish is not None and event.kind in {"tried", "save"}
     }
+    evidence_event_ids = {
+        event.evidence_id
+        for event in events
+        if event.evidence_id is not None and event.kind in {"tried", "save"}
+    }
+    if evidence_event_ids:
+        known_dish_names.update(
+            normalize_dish_name(item.name)
+            for item in db.scalars(
+                select(MenuItemEvidence).where(MenuItemEvidence.id.in_(evidence_event_ids))
+            )
+        )
     profile_exploration = int(profile.features.get("adventure", 4)) / 10
     exploration = max(0.0, min(1.0, request_data.exploration * 0.75 + profile_exploration * 0.25))
     has_food_intent = any((
@@ -382,6 +394,7 @@ def search_results(db: Session, user: User | None, request_data: FoodSearchReque
                 "score": item["ranking"]["score"],
                 "components": item["ranking"]["components"],
                 "why": item["why"],
+                "explanation": item["explanation"],
                 "evidence": item,
             }
             for item in evidence_result["results"]
@@ -394,6 +407,22 @@ def search_results(db: Session, user: User | None, request_data: FoodSearchReque
         "intent": intent,
         "recommendations": ranked,
         "evidence_search": evidence_result,
+        "pipeline": {
+            "intent": "deterministic_authority",
+            "candidate_source": (
+                "approved_menu_evidence"
+                if evidence_result and evidence_result["results"]
+                else "fictional_demo_catalog"
+            ),
+            "hard_constraints_before_ranking": True,
+            "grounded_explanations": True,
+            "feedback_target": "evidence_id_or_dish_id",
+            "fallback": (
+                "demo_catalog_when_no_approved_evidence_match"
+                if not location_only
+                else "none_for_location_only_request"
+            ),
+        },
         "ranking_weights": ranking_weights(),
         "intent_weights": intent_weights(),
         "personalization": {

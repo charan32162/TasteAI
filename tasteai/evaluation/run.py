@@ -15,6 +15,10 @@ from sqlalchemy.pool import StaticPool
 from tasteai.ai_providers import GroundedClaim
 from tasteai.database import Base
 from tasteai.engine import parse_intent, rank_dishes
+from tasteai.evaluation.multi_restaurant import (
+    build_multi_restaurant_fixture,
+    evaluate_multi_restaurant_fixture,
+)
 from tasteai.menu_evidence import RestaurantIdentityCandidate, approve_menu_source, create_restaurant_identity, normalize_dish_name, register_menu_source
 from tasteai.models import Dish, MenuDocument, MenuItemEvidence, Restaurant, TasteProfile
 from tasteai.providers import FictionalDemoProvider
@@ -355,6 +359,7 @@ def evaluate(corpus_path: Path = CORPUS_PATH) -> dict[str, Any]:
 
     grounding = evaluate_grounded_claim_cases()
     retrieval = evaluate_rag_retrieval_cases()
+    multi_restaurant = _evaluate_multi_restaurant_fixture()
     return {
         "corpus_version": corpus["version"],
         "case_count": len(corpus["cases"]),
@@ -376,8 +381,45 @@ def evaluate(corpus_path: Path = CORPUS_PATH) -> dict[str, Any]:
         "categories": dict(sorted(by_category.items())),
         "rag_grounding": grounding,
         "rag_retrieval": retrieval,
-        "failures": case_failures + grounding["failures"] + retrieval["failures"],
+        "multi_restaurant": multi_restaurant,
+        "failures": (
+            case_failures
+            + grounding["failures"]
+            + retrieval["failures"]
+            + multi_restaurant["failures"]
+        ),
     }
+
+
+def _evaluate_multi_restaurant_fixture() -> dict[str, Any]:
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Session = sessionmaker(bind=engine, expire_on_commit=False)
+    Base.metadata.create_all(bind=engine)
+    now = datetime(2026, 10, 30, 12, 0, tzinfo=timezone.utc)
+    try:
+        with Session() as db:
+            fixture = build_multi_restaurant_fixture(db, now=now)
+            checks = evaluate_multi_restaurant_fixture(db, fixture, now=now)
+            failures = [
+                {"check": name}
+                for name, passed in checks.items()
+                if not passed
+            ]
+            return {
+                "fixture_version": 1,
+                "restaurant_count": len(fixture.restaurant_ids),
+                "checks_passed": sum(checks.values()),
+                "checks_total": len(checks),
+                "checks": checks,
+                "failures": failures,
+            }
+    finally:
+        Base.metadata.drop_all(bind=engine)
+        engine.dispose()
 
 
 def main() -> None:

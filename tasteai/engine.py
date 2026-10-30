@@ -612,12 +612,28 @@ def rank_dishes(
         )
         if not explanations:
             explanations.append("Ranked from available menu data; unverified attributes were not scored.")
+        explanation = {
+            "summary": explanations[0] if explanations else "Ranked from available menu data.",
+            "facts": explanations,
+            "ranking_trace": {
+                "mode": mode,
+                "components": components,
+                "weights": blended_weights,
+                "hard_constraints_applied": True,
+            },
+            "citations": [{
+                "source_label": dish.source_label,
+                "restaurant": dish.restaurant.name,
+                "dish_id": dish.id,
+            }],
+        }
         result.append({
             "dish_id": dish.id, "name": dish.name, "description": dish.description,
             "cuisine": dish.cuisine, "price_inr": dish.price_inr, "vegetarian": dish.vegetarian,
             "ingredients": dish.ingredients, "attributes": dish.attributes,
             "restaurant": dish.restaurant.name, "source_label": dish.source_label,
             "match_percent": match, "components": components, "why": explanations,
+            "explanation": explanation,
             "confidence_label": "heuristic estimate",
         })
     return sorted(result, key=lambda item: (-item["match_percent"], item["name"]))[:limit]

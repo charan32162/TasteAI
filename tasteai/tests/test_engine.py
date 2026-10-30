@@ -48,6 +48,14 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(parse_intent("Give me something different")["recommendation_mode"], "different")
         self.assertEqual(parse_intent("Surprise me")["recommendation_mode"], "surprise")
 
+    def test_recommendation_contains_structured_grounded_explanation(self):
+        result = rank_dishes(
+            [dish()], profile(), [], [], parse_intent("something spicy"), limit=1
+        )[0]
+        self.assertIn("explanation", result)
+        self.assertEqual(result["explanation"]["ranking_trace"]["hard_constraints_applied"], True)
+        self.assertEqual(result["explanation"]["citations"][0]["dish_id"], result["dish_id"])
+
     def test_feedback_learning_is_bounded_and_provenanced(self):
         taste_profile = profile()
         self.assertEqual(update_profile_from_feedback(taste_profile, "too_spicy"), "spice")

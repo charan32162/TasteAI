@@ -8,11 +8,12 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .engine import parse_intent
 from .menu_evidence import normalize_dish_name, restaurants_with_dish_evidence
-from .models import TasteProfile
+from .models import CanonicalDish, DishAlias, TasteProfile
 
 
 DEFAULT_EVIDENCE_RANKING_WEIGHTS = {
@@ -169,14 +170,21 @@ def search_menu_evidence(
             "Enter a dish name so TasteAI can search for exact menu evidence.",
         )
 
-    rows = restaurants_with_dish_evidence(
-        db,
-        dish_query,
-        now=now,
-        include_stale=True,
-        include_temporarily_unavailable=True,
-        include_conflicted=True,
-    )
+    lookup_names = _canonical_lookup_names(db, dish_query)
+    rows = []
+    seen_evidence_ids: set[int] = set()
+    for lookup_name in lookup_names:
+        for row in restaurants_with_dish_evidence(
+            db,
+            lookup_name,
+            now=now,
+            include_stale=True,
+            include_temporarily_unavailable=True,
+            include_conflicted=True,
+        ):
+            if row["evidence_id"] not in seen_evidence_ids:
+                seen_evidence_ids.add(row["evidence_id"])
+                rows.append(row)
     if restaurant_identity_ids is not None:
         rows = [
             row for row in rows
@@ -293,6 +301,25 @@ def search_menu_evidence(
             dish_query,
             intent,
         )
+        candidate["explanation"] = {
+            "summary": candidate["why"][0],
+            "facts": candidate["why"],
+            "ranking_trace": {
+                "mode": intent["recommendation_mode"],
+                "components": candidate["ranking"]["components"],
+                "hard_constraints_applied": True,
+                "evidence_policy": policy,
+            },
+            "citations": [
+                {
+                    "evidence_id": source["evidence_id"],
+                    "source_id": source["source_id"],
+                    "source_type": source["source_type"],
+                    "captured_at": source["captured_at"],
+                }
+                for source in candidate["provenance"]["sources"]
+            ],
+        }
         ranked.append(candidate)
 
     ranked.sort(
@@ -344,6 +371,24 @@ def search_menu_evidence(
         "excluded_candidate_counts": excluded,
         "message": message,
     }
+
+
+def _canonical_lookup_names(db: Session, requested_name: str) -> tuple[str, ...]:
+    """Resolve only approved canonical aliases; punctuation normalization remains the fallback."""
+    normalized = normalize_dish_name(requested_name)
+    names = [normalized]
+    alias = db.scalar(
+        select(DishAlias).where(
+            DishAlias.normalized_alias == normalized,
+            DishAlias.review_status == "approved",
+        )
+    )
+    if alias is None:
+        return tuple(names)
+    canonical = db.get(CanonicalDish, alias.canonical_dish_id)
+    if canonical is not None and canonical.status == "active":
+        names.append(canonical.normalized_name)
+    return tuple(dict.fromkeys(names))
 
 
 def _empty_result(

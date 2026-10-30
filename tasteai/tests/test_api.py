@@ -521,6 +521,8 @@ class ApiTests(unittest.TestCase):
             self.assertEqual(recommendation_body["recommendations"][0]["evidence"]["evidence_id"], evidence.id)
             self.assertEqual(recommendation_body["recommendations"][0]["source_label"], "approved menu evidence")
             self.assertEqual(recommendation_body["recommendations"][0]["evidence"]["provenance"]["authorization_status"], "approved")
+            self.assertEqual(recommendation_body["pipeline"]["candidate_source"], "approved_menu_evidence")
+            self.assertTrue(recommendation_body["recommendations"][0]["explanation"]["citations"])
             feedback = self.client.post(
                 "/api/v1/food/feedback",
                 headers=auth,
