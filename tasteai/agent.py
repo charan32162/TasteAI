@@ -11,6 +11,10 @@ from uuid import uuid4
 
 MAX_AGENT_STEPS = 4
 MAX_AGENT_TOOL_CALLS = 2
+AGENT_TOOL_CONTRACTS = (
+    {"name": "understand_query", "input": "text", "output": "validated_intent", "side_effects": "none"},
+    {"name": "retrieve_approved_evidence", "input": "text", "output": "approved_evidence", "side_effects": "read_only"},
+)
 
 
 @dataclass
@@ -66,5 +70,13 @@ def run_bounded_food_flow(
         "tool_call_count": state.tool_calls,
         "steps": list(state.steps),
         "explanation": state.explanation,
+        "authority": {
+            "intent": "deterministic_parser_with_optional_llm_hints",
+            "retrieval": "approved_evidence_only",
+            "ranking": "deterministic_ranker",
+            "response": "grounded_renderer",
+        },
+        "tool_contracts": list(AGENT_TOOL_CONTRACTS),
+        "autonomy": "bounded_fixed_flow",
     }
     return state

@@ -122,6 +122,8 @@ class RagTests(unittest.TestCase):
         answer = answer_from_evidence(found)
         self.assertEqual(len(found), 1)
         self.assertEqual(found[0].canonical_dish_id, canonical.id)
+        self.assertIn("approved_source", found[0].hard_filters_applied)
+        self.assertEqual(found[0].retrieval_method, "deterministic_lexical_fallback")
         self.assertIn("Chicken Biryani at INR 260 is listed in menu evidence for M Hotel.", answer["answer"])
         self.assertEqual(answer["citations"][0]["evidence_id"], self.evidence.id)
         self.assertEqual(answer["grounding_status"], "deterministically_grounded")
@@ -142,6 +144,7 @@ class RagTests(unittest.TestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0].lexical_score, 0)
         self.assertEqual(results[0].vector_score, 1)
+        self.assertEqual(results[0].retrieval_method, "hybrid_semantic_and_lexical")
         expected_score = (
             0.40 * results[0].lexical_score
             + 0.30 * results[0].vector_score

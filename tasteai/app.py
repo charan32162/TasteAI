@@ -508,7 +508,12 @@ def ai_status(db: Session = Depends(get_db)):
         "embeddings": {"status": "external_enabled" if embeddings_enabled else "local_deterministic", "provider": "openai" if embeddings_enabled else "tasteai_hash"},
         "rag": {"status": "ready" if db.scalar(select(EvidenceChunk.id).limit(1)) else "empty", "indexed_chunks": db.query(EvidenceChunk).count()},
         "ocr": menu_photo_extractor_status(),
-        "agent": {"status": "bounded_deterministic", "max_steps": MAX_AGENT_STEPS, "max_tool_calls": MAX_AGENT_TOOL_CALLS},
+        "agent": {
+            "status": "bounded_deterministic",
+            "max_steps": MAX_AGENT_STEPS,
+            "max_tool_calls": MAX_AGENT_TOOL_CALLS,
+            "boundary": "typed_read_only_tools",
+        },
     }
 
 

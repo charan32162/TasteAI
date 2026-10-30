@@ -102,6 +102,8 @@ class RetrievedEvidence:
     freshness_score: float
     score: float
     content: str
+    retrieval_method: str = "hybrid_lexical_vector"
+    hard_filters_applied: tuple[str, ...] = ()
 
 
 def chunk_menu_evidence(
@@ -288,6 +290,22 @@ def search_rag_context(
             freshness_score=round(freshness, 6),
             score=round(0.40 * lexical + 0.30 * max(0.0, vector_score) + 0.20 * evidence_quality + 0.10 * freshness, 6),
             content=chunk.content,
+            retrieval_method=(
+                "hybrid_semantic_and_lexical"
+                if (
+                    not isinstance(embedder, HashEmbeddingProvider)
+                    and chunk.embedding_model == embedder.model
+                    and vector_score > 0
+                )
+                else "deterministic_lexical_fallback"
+            ),
+            hard_filters_applied=(
+                "approved_source",
+                "supported_or_verified_state",
+                "freshness",
+                "conflict_exclusion",
+                "budget" if budget_max is not None else "no_budget_filter",
+            ),
         ))
     results.sort(key=lambda result: (-result.score, result.evidence_id))
     return results[:limit]
