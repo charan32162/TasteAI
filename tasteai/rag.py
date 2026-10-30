@@ -104,6 +104,8 @@ class RetrievedEvidence:
     content: str
     retrieval_method: str = "hybrid_lexical_vector"
     hard_filters_applied: tuple[str, ...] = ()
+    embedding_model: str = ""
+    embedding_dimension: int = 0
 
 
 def chunk_menu_evidence(
@@ -306,6 +308,8 @@ def search_rag_context(
                 "conflict_exclusion",
                 "budget" if budget_max is not None else "no_budget_filter",
             ),
+            embedding_model=chunk.embedding_model,
+            embedding_dimension=chunk.embedding_dimension or 0,
         ))
     results.sort(key=lambda result: (-result.score, result.evidence_id))
     return results[:limit]

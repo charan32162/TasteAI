@@ -148,6 +148,10 @@ class AIProviderTests(unittest.TestCase):
         with self.assertRaises(AIProviderError):
             provider.embed_documents(["x"] * 65)
 
+    def test_hash_embedding_empty_text_is_rejected(self):
+        with self.assertRaises(AIProviderError):
+            HashEmbeddingProvider().embed_text(" ")
+
     def test_openai_embedding_adapter_sorts_and_validates_batch_vectors(self):
         client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, json={
             "data": [

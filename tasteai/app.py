@@ -646,6 +646,8 @@ def rag_query(body: RagQueryRequest, request: Request, db: Session = Depends(get
             effective_budget = Decimal(parsed_budget)
     try:
         embedder = None
+        retrieval_status = "provider"
+        retrieval_error = None
         try:
             embedder = configured_embedding_provider()
             results = search_rag_context(
@@ -656,7 +658,9 @@ def rag_query(body: RagQueryRequest, request: Request, db: Session = Depends(get
                 budget_max=effective_budget,
                 limit=body.limit,
             )
-        except AIProviderError:
+        except AIProviderError as error:
+            retrieval_status = "deterministic_fallback"
+            retrieval_error = type(error).__name__
             results = search_rag_context(
                 db,
                 body.query,
@@ -684,6 +688,11 @@ def rag_query(body: RagQueryRequest, request: Request, db: Session = Depends(get
         return {
             **grounded,
             "retrieval": "hybrid_lexical_and_vector" if any(item.vector_score > 0 for item in results) else "lexical_fallback",
+            "retrieval_provider": {
+                "status": retrieval_status,
+                "provider": getattr(embedder, "name", None) if retrieval_status == "provider" else "local_hash",
+                "error_type": retrieval_error,
+            },
             "generation": {"status": generation_status, "provider": "openai" if generation_status == "claims_validated" else None},
             "result_count": len(results),
             "results": [item.__dict__ for item in results],

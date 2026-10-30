@@ -124,6 +124,8 @@ class RagTests(unittest.TestCase):
         self.assertEqual(found[0].canonical_dish_id, canonical.id)
         self.assertIn("approved_source", found[0].hard_filters_applied)
         self.assertEqual(found[0].retrieval_method, "deterministic_lexical_fallback")
+        self.assertEqual(found[0].embedding_model, HashEmbeddingProvider.model)
+        self.assertEqual(found[0].embedding_dimension, 256)
         self.assertIn("Chicken Biryani at INR 260 is listed in menu evidence for M Hotel.", answer["answer"])
         self.assertEqual(answer["citations"][0]["evidence_id"], self.evidence.id)
         self.assertEqual(answer["grounding_status"], "deterministically_grounded")
@@ -162,7 +164,7 @@ class RagTests(unittest.TestCase):
         self.document.captured_at = datetime.now(timezone.utc) - timedelta(days=30)
         index_approved_evidence(self.db)
         self.db.commit()
-        self.assertEqual(search_rag_context(self.db, "Chicken Biryani"), [])
+        self.assertEqual(search_rag_context(self.db, "poultry pilaf"), [])
         self.document.captured_at = datetime.now(timezone.utc) - timedelta(minutes=5)
         index_approved_evidence(self.db)
         self.source.authorization_status = "revoked"
@@ -239,6 +241,35 @@ class RagTests(unittest.TestCase):
             index_approved_evidence(self.db, limit=0)
         with self.assertRaises(RagError):
             search_rag_context(self.db, "Chicken Biryani", limit=0)
+
+    def test_zero_and_mismatched_vectors_are_safe(self):
+        self.assertEqual(search_rag_context(self.db, "poultry pilaf"), [])
+        self.assertEqual(search_rag_context(self.db, "Chicken Biryani", embedding_provider=ZeroVectorEmbedder()), [])
+        index_approved_evidence(self.db, embedding_provider=ShortVectorEmbedder())
+        self.db.commit()
+        self.assertEqual(search_rag_context(self.db, "poultry pilaf"), [])
+
+
+class ZeroVectorEmbedder:
+    name = "zero"
+    model = "zero-v1"
+
+    def embed_text(self, text):
+        return [0.0, 0.0]
+
+    def embed_documents(self, texts):
+        return [[0.0, 0.0] for _ in texts]
+
+
+class ShortVectorEmbedder:
+    name = "short"
+    model = "short-v1"
+
+    def embed_text(self, text):
+        return [1.0, 0.0]
+
+    def embed_documents(self, texts):
+        return [[1.0, 0.0] for _ in texts]
 
 
 if __name__ == "__main__":
