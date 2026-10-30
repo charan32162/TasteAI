@@ -93,6 +93,13 @@ button:disabled { cursor: wait; opacity: .55; }
 input[type="range"] { width: 100%; height: 3px; margin: 8px 0 3px; appearance: none; background: #dce4d5; }
 input[type="range"]::-webkit-slider-thumb { width: 14px; height: 14px; appearance: none; border: 3px solid white; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 1px #8ea78d; }
 input[type="range"]::-moz-range-thumb { width: 10px; height: 10px; border: 3px solid white; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 1px #8ea78d; }
+.ai-pipeline-panel { max-width: 1040px; margin: -22px auto 35px; padding: 18px; border: 1px solid #dfe8dc; border-radius: 14px; background: linear-gradient(135deg, rgba(247,251,244,.95), rgba(255,255,255,.72)); }
+.pipeline-status { margin: 0 auto 12px; color: #6f7e70; font-size: .7rem; line-height: 1.5; }
+.pipeline-stages { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.pipeline-stage { display: grid; gap: 4px; padding: 9px; border: 1px solid #e1e9de; border-radius: 9px; background: rgba(255,255,255,.78); }
+.pipeline-stage strong { color: var(--green-deep); font-size: .66rem; text-transform: capitalize; }
+.pipeline-stage small { color: #899188; font-size: .58rem; line-height: 1.35; }
+.pipeline-stage.skipped { opacity: .65; }
 .location-search { max-width: 1040px; margin: -25px auto 35px; padding: 18px; border: 1px solid #e7e9df; border-radius: 14px; background: rgba(255,255,255,.48); }
 .rag-lookup { display: grid; gap: 10px; margin-top: 18px; padding-top: 16px; border-top: 1px solid #e7e9df; }
 .rag-lookup h3 { margin: 4px 0; font-size: 1rem; }
@@ -290,6 +297,8 @@ input[type="range"]::-moz-range-thumb { width: 10px; height: 10px; border: 3px s
   .quick-prompts button { padding: 6px 9px; font-size: .62rem; }
   .control-row { align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 32px; padding: 12px; }
   .location-search { margin: -17px auto 27px; padding: 13px; }
+  .ai-pipeline-panel { margin: -14px auto 27px; padding: 13px; }
+  .pipeline-stages { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .location-form { align-items: stretch; }
   .location-area-label { flex-basis: 100%; }
   .location-form .button-secondary { flex: 1 1 auto; padding: 0 9px; font-size: .65rem; }

@@ -166,6 +166,22 @@ function renderRecommendations(items, clarification = null) {
   requestAnimationFrame(() => $(".best-match-section").scrollIntoView({ behavior: "smooth", block: "start" }));
 }
 
+function renderPipeline(pipeline) {
+  if (!pipeline) return;
+  $("#ai-pipeline-mode").textContent = pipeline.candidate_source === "approved_menu_evidence"
+    ? "APPROVED EVIDENCE"
+    : "FICTIONAL DEMO";
+  $("#ai-pipeline-stages").innerHTML = (pipeline.stages || []).map((stage) => `
+    <span class="pipeline-stage ${stage.status === "complete" ? "complete" : "skipped"}">
+      <strong>${escapeHtml(stage.name.replaceAll("_", " "))}</strong>
+      <small>${escapeHtml(stage.status)} · ${escapeHtml(stage.authority)}</small>
+    </span>
+  `).join("");
+  $("#ai-pipeline-status").textContent = pipeline.hard_constraints_before_ranking
+    ? "Constraints run before personalization and ranking. Explanations are rendered from grounded facts; optional LLM output cannot override them."
+    : "The request could not enter the recommendation pipeline.";
+}
+
 async function discover(query = "") {
   const version = ++state.searchVersion;
   const body = requestBody(query);
@@ -187,6 +203,7 @@ async function discover(query = "") {
     const clarification = unsupported
       ? `The demo menu can't verify ${result.intent.unsupported_constraints.join(", ")}. No options are shown for safety.`
       : result.clarification;
+    renderPipeline(result.pipeline);
     renderRecommendations(result.recommendations, clarification);
     $("#search-message").textContent = result.guest_mode
       ? "Guest discovery · search and compare without an account. Sign in only to save or build a persistent Taste Twin."
@@ -642,8 +659,19 @@ async function refreshRagStatus() {
     $("#rag-status").textContent = status.rag.status === "empty"
       ? "No approved menu evidence is indexed yet. Answers will say when evidence is unavailable."
       : `Approved menu evidence is indexed (${status.rag.indexed_chunks} records). Only eligible evidence can support an answer.`;
+    $("#ai-pipeline-status").textContent = `Parser: deterministic authority · RAG: ${status.rag.status} · embeddings: ${status.embeddings.status} · agent: ${status.agent.status}.`;
+    $("#ai-pipeline-mode").textContent = status.llm.status === "enabled" || status.embeddings.status === "external_enabled"
+      ? "OPTIONAL AI ENABLED"
+      : "OFFLINE DEMO";
+    $("#ai-pipeline-stages").innerHTML = [
+      ["intent", "deterministic fallback ready"],
+      ["evidence retrieval", status.rag.status],
+      ["embeddings", status.embeddings.status],
+      ["bounded agent", `${status.agent.max_steps} steps / ${status.agent.max_tool_calls} tools`]
+    ].map(([name, value]) => `<span class="pipeline-stage complete"><strong>${escapeHtml(name)}</strong><small>${escapeHtml(value)}</small></span>`).join("");
   } catch (error) {
     $("#rag-status").textContent = `Evidence status is unavailable: ${error.message}`;
+    $("#ai-pipeline-status").textContent = `AI status unavailable: ${error.message}`;
   }
 }
 

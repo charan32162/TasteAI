@@ -414,6 +414,14 @@ def search_results(db: Session, user: User | None, request_data: FoodSearchReque
                 if evidence_result and evidence_result["results"]
                 else "fictional_demo_catalog"
             ),
+            "stages": [
+                {"name": "intent", "status": "complete", "authority": "deterministic_parser"},
+                {"name": "evidence_retrieval", "status": "complete" if evidence_result else "skipped", "authority": "approved_sources_only"},
+                {"name": "hard_constraints", "status": "complete", "authority": "deterministic_filter"},
+                {"name": "personalization", "status": "complete", "authority": "taste_dna_and_history"},
+                {"name": "ranking", "status": "complete", "authority": "deterministic_ranker"},
+                {"name": "explanation", "status": "complete", "authority": "grounded_facts"},
+            ],
             "hard_constraints_before_ranking": True,
             "grounded_explanations": True,
             "feedback_target": "evidence_id_or_dish_id",

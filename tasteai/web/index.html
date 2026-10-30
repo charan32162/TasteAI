@@ -56,6 +56,11 @@
             <label class="budget-control">MAX BUDGET <span>₹</span><input id="budget-input" type="number" min="1" max="100000" placeholder="Any" aria-label="Maximum budget in rupees" /></label>
             <label class="explore-control"><span class="control-heading">EXPLORE MODE</span><span class="range-labels"><span>Familiar</span><span id="explore-value">A little new</span><span>Adventurous</span></span><input id="explore-range" type="range" min="0" max="100" value="30" aria-label="How adventurous should recommendations be?" /></label>
           </div>
+          <section class="ai-pipeline-panel" aria-labelledby="pipeline-heading">
+            <div class="section-heading"><div><span class="eyebrow">HOW TASTEAI DECIDES</span><h2 id="pipeline-heading">Grounded AI pipeline</h2></div><span id="ai-pipeline-mode" class="demo-chip">OFFLINE DEMO</span></div>
+            <div id="ai-pipeline-status" class="pipeline-status" aria-live="polite">Checking deterministic parser, approved evidence retrieval, and optional AI providers…</div>
+            <div id="ai-pipeline-stages" class="pipeline-stages"></div>
+          </section>
           <section class="location-search" id="location-search" aria-labelledby="location-heading">
             <div><span class="eyebrow">OPTIONAL RESTAURANT DISCOVERY</span><h2 id="location-heading">Find a restaurant and check dish evidence</h2></div>
             <form class="location-form" id="location-form">

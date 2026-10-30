@@ -74,6 +74,7 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(page.status_code, 200)
         self.assertIn('id="location-food-query"', page.text)
         self.assertIn('id="location-use-taste-profile"', page.text)
+        self.assertIn("Grounded AI pipeline", page.text)
         self.assertIn("approved menu evidence", page.text)
         self.assertEqual(script.status_code, 200)
         self.assertIn('/api/v1/restaurants/discover', script.text)
@@ -522,6 +523,7 @@ class ApiTests(unittest.TestCase):
             self.assertEqual(recommendation_body["recommendations"][0]["source_label"], "approved menu evidence")
             self.assertEqual(recommendation_body["recommendations"][0]["evidence"]["provenance"]["authorization_status"], "approved")
             self.assertEqual(recommendation_body["pipeline"]["candidate_source"], "approved_menu_evidence")
+            self.assertEqual(recommendation_body["pipeline"]["stages"][-1]["name"], "explanation")
             self.assertTrue(recommendation_body["recommendations"][0]["explanation"]["citations"])
             feedback = self.client.post(
                 "/api/v1/food/feedback",
