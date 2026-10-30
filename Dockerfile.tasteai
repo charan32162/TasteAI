@@ -1,0 +1,29 @@
+FROM python:3.13-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    TASTEAI_ENV=production \
+    TASTEAI_AUTO_CREATE_SCHEMA=false \
+    TASTEAI_DATABASE_URL=sqlite:////data/tasteai.db
+
+WORKDIR /app
+
+RUN addgroup --system tasteai && adduser --system --ingroup tasteai --home /home/tasteai tasteai \
+    && mkdir -p /data /home/tasteai/.tasteai/private-menu-photos \
+    && chown -R tasteai:tasteai /data /home/tasteai
+
+COPY tasteai/requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY tasteai/*.py ./tasteai/
+COPY tasteai/alembic.ini ./tasteai/alembic.ini
+COPY tasteai/migrations ./tasteai/migrations
+COPY tasteai/web ./tasteai/web
+
+USER tasteai
+EXPOSE 8000
+VOLUME ["/data", "/home/tasteai/.tasteai/private-menu-photos"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3)" || exit 1
+
+CMD ["uvicorn", "tasteai.app:app", "--host", "0.0.0.0", "--port", "8000"]

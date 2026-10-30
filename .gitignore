@@ -2,3 +2,8 @@ node_modules/
 .env
 *.log
 .DS_Store
+__pycache__/
+*.py[cod]
+.pytest_cache/
+tasteai/.env
+tasteai/data/*.db

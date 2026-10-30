@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f7f5f0" />
+    <meta name="description" content="A food recommendation that learns what you love." />
+    <title>TasteAI — made for your taste</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <a class="brand" href="/" aria-label="TasteAI home"><span class="brand-mark">t.</span><span>TasteAI</span></a>
+        <p class="eyebrow">YOUR FOOD, YOUR WAY</p>
+        <nav aria-label="Main navigation">
+          <button class="nav-link active" data-view="discover"><span>⌕</span> Discover</button>
+          <button class="nav-link hidden" data-auth-only data-view="taste"><span>◉</span> Taste DNA</button>
+          <button class="nav-link hidden" data-auth-only data-view="group"><span>◎</span> Group table</button>
+          <button class="nav-link hidden" data-auth-only data-view="transfer"><span>↗</span> Taste transfer</button>
+          <button class="nav-link hidden" data-auth-only data-view="reviews"><span>≋</span> Review evidence</button>
+          <button class="nav-link hidden" data-auth-only data-view="saved"><span>♡</span> Saved foods</button>
+          <button class="nav-link hidden" data-auth-only data-view="history"><span>↺</span> Food history</button>
+        </nav>
+        <div class="sidebar-note">
+          <span class="note-dot"></span>
+          <div><strong>Small steps. Better bites.</strong><p>Your Taste Twin learns from each meal.</p></div>
+        </div>
+        <div class="account-row"><div class="avatar" id="avatar">T</div><div class="account-copy"><strong id="account-name">Your Taste Twin</strong><span id="account-email">Sign in to save your taste</span></div><button class="text-button" id="auth-action" type="button">Sign in</button></div>
+      </aside>
+
+      <main class="main-content">
+        <header class="topbar"><span class="eyebrow">A LITTLE MORE YOU IN EVERY BITE</span><div class="demo-label"><span></span> Fictional demo menu</div></header>
+        <section class="view-panel active" id="view-discover">
+          <div class="hero">
+            <div class="hero-kicker"><span class="sparkle">✳</span> YOUR PERSONAL FOOD TWIN</div>
+            <h1>What sounds<br /><em>good to you?</em></h1>
+            <p class="hero-copy">Tell us what you're craving. Get a best match from the fictional demo menu—no account needed.</p>
+            <form class="search-box" id="search-form">
+              <span class="search-icon">⌕</span>
+              <input id="search-input" type="text" maxlength="500" placeholder="Something spicy, crispy, under ₹300…" autocomplete="off" aria-label="Describe what food you want" />
+              <button class="search-submit" id="search-submit" type="submit">Find my food <span>→</span></button>
+            </form>
+            <div class="quick-prompts" aria-label="Try a suggestion">
+              <span>TRY</span>
+              <button type="button" data-prompt="Something spicy and crispy under ₹300">Spicy + crispy</button>
+              <button type="button" data-prompt="Vegetarian under ₹200">Veg under ₹200</button>
+              <button type="button" data-prompt="Something filling under ₹300">Filling</button>
+              <button type="button" data-prompt="">Browse demo menu</button>
+            </div>
+          </div>
+          <div class="control-row">
+            <label class="budget-control">MAX BUDGET <span>₹</span><input id="budget-input" type="number" min="1" max="100000" placeholder="Any" aria-label="Maximum budget in rupees" /></label>
+            <label class="explore-control"><span class="control-heading">EXPLORE MODE</span><span class="range-labels"><span>Familiar</span><span id="explore-value">A little new</span><span>Adventurous</span></span><input id="explore-range" type="range" min="0" max="100" value="30" aria-label="How adventurous should recommendations be?" /></label>
+          </div>
+          <section class="location-search" id="location-search" aria-labelledby="location-heading">
+            <div><span class="eyebrow">OPTIONAL RESTAURANT DISCOVERY</span><h2 id="location-heading">Find a restaurant and check dish evidence</h2></div>
+            <form class="location-form" id="location-form">
+              <label class="location-area-label">Search by area<input id="location-area" maxlength="150" autocomplete="off" placeholder="City, neighborhood, or landmark" /></label>
+              <label class="location-food-label">Dish to verify<input id="location-food-query" maxlength="500" autocomplete="off" placeholder="Chicken dum biryani" /></label>
+              <label class="location-profile-option hidden" data-auth-only><input id="location-use-taste-profile" type="checkbox" /> Use my Taste DNA to rank menu evidence</label>
+              <button class="button-secondary" id="location-area-submit" type="submit">Search area</button>
+              <button class="button-secondary" id="location-nearby-submit" type="button">Use my location once</button>
+            </form>
+            <p class="location-privacy">Area text or approximate device location is sent to the selected location provider only when you start a lookup and is not stored. The dish query is used only by TasteAI to search approved menu evidence; it is not sent to the location provider. Signed-in users can opt in to use Taste DNA when ranking evidence. A restaurant is not a dish recommendation unless approved evidence matches.</p>
+            <p class="location-message" id="location-message" role="status" aria-live="polite"></p>
+            <div class="location-results" id="location-results" aria-live="polite"></div>
+            <section class="rag-lookup" aria-labelledby="rag-heading">
+              <div><span class="eyebrow">APPROVED EVIDENCE</span><h3 id="rag-heading">Check a dish against verified menus</h3></div>
+              <p id="rag-status" class="form-note">Answers use approved, current menu evidence when available.</p>
+              <form id="rag-query-form" class="location-form">
+                <label class="location-food-label">Dish or menu question<input id="rag-query" maxlength="500" required autocomplete="off" placeholder="Chicken dum biryani" /></label>
+                <button class="button-secondary" id="rag-query-submit" type="submit">Check menu evidence</button>
+              </form>
+              <div id="rag-answer" class="feature-message" role="status" aria-live="polite" hidden></div>
+            </section>
+          </section>
+          <p class="search-message" id="search-message" role="status" aria-live="polite"></p>
+          <div class="results-shell" id="results-shell" hidden>
+            <section class="best-match-section"><span class="eyebrow">YOUR BEST MATCH</span><div id="best-result" aria-live="polite"></div></section>
+            <section class="alternatives-section"><div class="section-heading"><div><span class="eyebrow">MORE TO EXPLORE</span><h2>Other good matches</h2></div><span class="result-count" id="result-count"></span></div><div class="results-grid" id="results"></div></section>
+            <p class="source-note">Sample dishes and kitchens are fictional demo content—not real restaurant or review data. Match scores are transparent estimates, not promises.</p>
+          </div>
+        </section>
+
+        <section class="view-panel" id="view-taste">
+          <div class="page-heading"><span class="eyebrow">YOUR FOOD TWIN</span><h1>A taste of <em>you.</em></h1><p>Your profile learns as you eat. Tune any of these whenever your mood changes.</p></div>
+          <form id="taste-form" class="taste-form"></form>
+          <div class="preference-columns"><label>CUISINES YOU ENJOY<input id="cuisines-input" placeholder="Indian, Thai, Japanese" /></label><label>INGREDIENTS YOU LOVE<input id="liked-input" placeholder="chickpeas, ginger, smoky flavours" /></label><label>INGREDIENTS TO AVOID<input id="disliked-input" placeholder="Use for strong dislikes" /></label><label>DIETARY RESTRICTIONS<input id="diet-input" placeholder="vegetarian, no peanuts" /></label></div>
+          <button class="button-primary" id="save-taste" type="button">Save my taste</button><p class="inline-message" id="taste-message"></p>
+          <div class="memory-block"><div class="section-heading"><div><span class="eyebrow">LONG-TERM FOOD MEMORY</span><h2>What TasteAI remembers</h2></div></div><form id="memory-form" class="memory-form"><input id="memory-input" placeholder="e.g. Never recommend paneer" maxlength="500" /><button class="button-secondary">Remember this</button></form><div id="memories-list" class="memory-list"></div></div>
+        </section>
+
+        <section class="view-panel" id="view-saved">
+          <div class="page-heading"><span class="eyebrow">YOUR LITTLE COLLECTION</span><h1>Saved for <em>later.</em></h1><p>Good things you want to come back to.</p></div><div class="results-grid" id="saved-list"></div>
+        </section>
+        <section class="view-panel" id="view-history">
+          <div class="page-heading"><span class="eyebrow">EVERY BITE TEACHES US</span><h1>Your food <em>story.</em></h1><p>Meals and feedback that help your Taste Twin get to know you.</p></div><div class="history-list" id="history-list"></div>
+        </section>
+        <section class="view-panel" id="view-group">
+          <div class="page-heading"><span class="eyebrow">A TABLE FOR EVERYONE</span><h1>Find your group's <em>middle ground.</em></h1><p>Tell us what each person wants. A venue appears only when every attendee has an eligible dish on its fictional demo menu.</p></div>
+          <form id="group-form" class="feature-form">
+            <label>ONE ATTENDEE PER LINE<textarea id="group-input" rows="6" maxlength="4000" placeholder="You: spicy under ₹300&#10;Sam: vegetarian, no peanuts"></textarea></label>
+            <p class="form-note">Use “You:” to apply your Taste DNA. Add a budget or food request after each name. The demo catalog can verify only vegetarian/vegan labels and listed ingredients; it cannot verify allergies or kitchen cross-contact.</p>
+            <button class="button-primary">Find a group match</button>
+          </form>
+          <div class="group-results" id="group-results" aria-live="polite"></div>
+        </section>
+
+        <section class="view-panel" id="view-transfer">
+          <div class="page-heading"><span class="eyebrow">A FRIEND'S FAVORITE</span><h1>Could you <em>love it too?</em></h1><p>Compare your Taste DNA with a friend-provided taste snapshot. No other account is looked up or changed.</p></div>
+          <form id="transfer-form" class="feature-form">
+            <label>FICTIONAL DEMO DISH<select id="transfer-dish" required><option value="">Loading demo menu…</option></select></label>
+            <label>YOUR FRIEND'S RATING<input id="transfer-rating" type="number" min="1" max="5" value="5" required /></label>
+            <fieldset class="transfer-features"><legend>FRIEND-SHARED TASTE LEVELS (0–10)</legend>
+              <label>Spice<input data-friend-feature="spice" type="number" min="0" max="10" value="5" /></label>
+              <label>Sweetness<input data-friend-feature="sweet" type="number" min="0" max="10" value="5" /></label>
+              <label>Crunch<input data-friend-feature="crunch" type="number" min="0" max="10" value="5" /></label>
+              <label>Smokiness<input data-friend-feature="smokiness" type="number" min="0" max="10" value="5" /></label>
+            </fieldset>
+            <label class="consent-row"><input id="transfer-consent" type="checkbox" required /> My friend agreed to share these taste features and rating with me.</label>
+            <p class="form-note">This estimate uses only the values you enter and your Taste DNA. It is not a calibrated prediction, and the friend-provided rating is not independently verified.</p>
+            <button class="button-primary">Compare our tastes</button>
+          </form>
+          <div class="transfer-result" id="transfer-result" aria-live="polite"></div>
+        </section>
+
+        <section class="view-panel" id="view-reviews">
+          <div class="page-heading"><span class="eyebrow">YOUR SOURCES, YOUR CALL</span><h1>Read the <em>evidence.</em></h1><p>Paste review excerpts you are authorized to use. TasteAI highlights exact phrases about food aspects and does not add claims beyond what you submit.</p></div>
+          <form id="review-form" class="feature-form">
+            <label>PASTE ONE EXCERPT PER LINE<textarea id="review-input" rows="8" maxlength="100000" placeholder="Paste review excerpts here, one per line."></textarea></label>
+            <p class="form-note">Up to 100 excerpts, 2,000 characters each. Text is analyzed in this request only and is not saved. No reviews are collected from external sources.</p>
+            <button class="button-primary">Analyze these excerpts</button>
+          </form>
+          <div class="review-results" id="review-results" aria-live="polite"></div>
+        </section>
+      </main>
+    </div>
+
+    <footer class="site-footer" aria-label="Legal information">
+      <a href="/terms">Terms of Use</a>
+      <a href="/privacy">Privacy Policy</a>
+    </footer>
+
+    <dialog class="auth-dialog" id="auth-dialog">
+      <form method="dialog" class="dialog-close"><button aria-label="Close" value="cancel">×</button></form>
+      <span class="eyebrow">YOUR FOOD, YOUR WAY</span><h2 id="auth-title">Welcome back.</h2><p class="auth-subtitle">Your Taste Twin will be right here.</p>
+      <form id="auth-form" class="auth-form"><label class="signup-field hidden">YOUR NAME<input id="auth-name" maxlength="100" autocomplete="name" /></label><label>EMAIL ADDRESS<input id="auth-email" type="email" required autocomplete="email" /></label><label>PASSWORD<input id="auth-password" type="password" required minlength="10" autocomplete="current-password" /></label><button class="button-primary" id="auth-submit">Sign in</button><p class="inline-message" id="auth-message"></p></form>
+      <p class="auth-switch"><span id="auth-switch-label">New here?</span> <button class="text-button" id="auth-switch" type="button">Create an account</button></p>
+      <button class="button-secondary guest-continue" id="continue-guest" type="button">Continue as Guest</button>
+    </dialog>
+    <div class="toast" id="toast" role="status"></div>
+    <script src="/assets/app.js" defer></script>
+  </body>
+</html>

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Privacy Policy for TasteAI." />
+    <title>Privacy Policy — TasteAI</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <main class="policy-page">
+      <nav class="policy-nav" aria-label="Policy navigation"><a href="/">TasteAI home</a><a href="/terms">Terms of Use</a></nav>
+      <p class="eyebrow">TASTEAI</p>
+      <h1>Privacy Policy</h1>
+      <p class="policy-date">Last updated: October 22, 2026</p>
+      <p>This policy describes information handled by the current TasteAI app, a food discovery and preference tool. It distinguishes information used for a request from information saved to an account.</p>
+
+      <h2>Account and authentication</h2>
+      <p>If you register, TasteAI handles the name and email address you provide and authentication information needed to sign in. Passwords are stored as password hashes rather than readable passwords. Authentication tokens are used to recognize signed-in requests.</p>
+
+      <h2>Location and restaurant lookups</h2>
+      <p>TasteAI handles location information only when you explicitly submit an area search or choose the one-time device-location action. An area query or approximate device coordinates are sent to the restaurant location provider configured for that deployment. The app's current lookup flow does not save your location or the provider's restaurant results in your TasteAI account. The dish query is used separately to search available menu evidence.</p>
+      <p>Depending on deployment configuration, a provider may be OpenStreetMap-based services or Google Places. Those providers receive the information necessary to perform the lookup and handle it under their own privacy terms. Provider availability and configuration vary by deployment.</p>
+
+      <h2>Taste preferences and food activity</h2>
+      <p>For signed-in users, TasteAI stores taste-profile preferences you provide or that are inferred from your submitted ratings and feedback. It can also store saved foods, food history, feedback, and food memories you choose to add. These records support the app's personalization and saved-food features. TasteAI uses submitted review excerpts for the requested analysis; the current review-analysis flow does not save those excerpts.</p>
+
+      <h2>Demo, place, and menu information</h2>
+      <p>The default food catalog is fictional demo content. If a real restaurant provider is configured, place information is obtained when you initiate a lookup and is displayed for that request. TasteAI may also use approved menu evidence sources already available to the service. No automatic menu or review collection is described as a current feature here. Restaurant and menu information can be incomplete or out of date.</p>
+
+      <h2>Menu photos and optional AI providers</h2>
+      <p>Trusted, configured reviewers can upload menu photos. TasteAI stores the original image in private local storage and does not expose an image-serving route. If the operator explicitly enables external OCR, the uploaded image is sent to OpenAI for text extraction; otherwise it is not sent to an OCR provider. Extracted menu rows remain unverified proposals until a reviewer checks and accepts them. Accepted menu details and provenance are stored as menu evidence.</p>
+      <p>If the operator separately enables the external LLM or embedding options, a relevant food query and bounded fields from approved menu evidence may be sent to OpenAI for query understanding or grounded claim selection; approved menu text may also be sent for embedding and search. These options are disabled by default. Source descriptions and private image paths are excluded from grounded answer context. OpenAI handles submitted data under its applicable service terms and privacy documentation. The operator should enable them only after providing appropriate notice and obtaining any required consent.</p>
+
+      <h2>Security and logs</h2>
+      <p>TasteAI uses password hashing and authenticated access for account-specific features. The application records basic request diagnostics such as request path, response status, and duration to operate and troubleshoot the service. Do not include sensitive information in search text or other optional inputs. No system can guarantee absolute security.</p>
+
+      <h2>Retention and deletion</h2>
+      <p>Account profile, saved-food, history, feedback, memory records, uploaded menu images, and approved menu evidence are retained in the deployment's database or private file storage while needed for the current features. The app currently supports removing food memories, but does not provide self-service deletion for accounts or menu photos. Location queries and lookup results are not saved by the current application flows. Review excerpts are not retained after their requested analysis. Operators may retain operational logs for troubleshooting and security; retention periods depend on deployment configuration.</p>
+
+      <h2>Future features</h2>
+      <p>This policy describes the current app behavior. Features such as automatic menu collection, verified live availability, or additional connected services are not represented as currently active. If future features change the information handled, this policy should be updated before those features are offered.</p>
+
+      <h2>Contact</h2>
+      <p>Privacy questions or requests: <strong>2200032162cseh@gmail.com</strong>.</p>
+    </main>
+  </body>
+</html>
