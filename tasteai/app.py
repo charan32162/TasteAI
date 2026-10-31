@@ -30,7 +30,7 @@ from .engine import (
     update_profile_from_rating,
 )
 from .evidence_discovery import search_menu_evidence
-from .agent import AgentState, MAX_AGENT_STEPS, MAX_AGENT_TOOL_CALLS, run_bounded_food_flow
+from .agent import AgentState, MAX_AGENT_STEPS, MAX_AGENT_TOOL_CALLS, ToolRegistry, ToolResultOutput, ToolSpec, ToolQueryInput, run_bounded_food_flow
 from .ai_providers import AIProviderError, HashEmbeddingProvider, QueryIntent, configured_embedding_provider, configured_llm_provider, embedding_provider_status, llm_provider_configured, llm_provider_status
 from .models import (
     Dish,
@@ -1517,12 +1517,26 @@ def agent_chat(
         evidence = [RetrievedEvidence(**item) for item in state.retrieved_context]
         return answer_from_evidence(evidence)
 
+    registry = ToolRegistry(max_calls=MAX_AGENT_TOOL_CALLS, overall_timeout_seconds=4.0)
+    registry.register(ToolSpec(
+        name="understand_query",
+        input_model=ToolQueryInput,
+        output_model=ToolResultOutput,
+        handler=lambda tool_input: ToolResultOutput(items=[understand(tool_input.query)]),
+    ))
+    registry.register(ToolSpec(
+        name="retrieve_approved_evidence",
+        input_model=ToolQueryInput,
+        output_model=ToolResultOutput,
+        handler=lambda tool_input: ToolResultOutput(items=retrieve(tool_input.query)),
+    ))
     state = run_bounded_food_flow(
         AgentState(user_id=user.id if user else None, query=body.query),
         understand=understand,
         retrieve=retrieve,
         rank=rank,
         explain=explain,
+        registry=registry,
     )
     result = state.ranking
     result["memory_recorded"] = memory_result

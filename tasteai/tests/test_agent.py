@@ -4,11 +4,47 @@ from tasteai.agent import (
     AgentState,
     MAX_AGENT_STEPS,
     MAX_AGENT_TOOL_CALLS,
+    ToolExecutionError,
+    ToolQueryInput,
+    ToolRegistry,
+    ToolResultOutput,
+    ToolSpec,
     run_bounded_food_flow,
 )
 
 
 class BoundedAgentTests(unittest.TestCase):
+    def test_registry_enforces_contracts_duplicates_and_allowlist(self):
+        registry = ToolRegistry(max_calls=2)
+        registry.register(ToolSpec(
+            name="search_menu_evidence",
+            input_model=ToolQueryInput,
+            output_model=ToolResultOutput,
+            handler=lambda request: ToolResultOutput(items=[{"dish": request.query}]),
+        ))
+        result = registry.execute("search_menu_evidence", {"query": "chicken"})
+        self.assertEqual(result.items[0]["dish"], "chicken")
+        with self.assertRaisesRegex(ToolExecutionError, "Repeated"):
+            registry.execute("search_menu_evidence", {"query": "chicken"})
+        with self.assertRaisesRegex(ToolExecutionError, "Unknown"):
+            registry.execute("not_allowlisted", {"query": "chicken"})
+        with self.assertRaisesRegex(ToolExecutionError, "invalid"):
+            registry.execute("search_menu_evidence", {"query": ""})
+
+    def test_registry_timeout_and_result_validation_are_sanitized(self):
+        import time
+        registry = ToolRegistry(max_calls=2)
+        registry.register(ToolSpec(
+            name="slow",
+            input_model=ToolQueryInput,
+            output_model=ToolResultOutput,
+            timeout_seconds=0.05,
+            handler=lambda _request: (time.sleep(0.2) or ToolResultOutput()),
+        ))
+        with self.assertRaisesRegex(ToolExecutionError, "timed out"):
+            registry.execute("slow", {"query": "x"})
+        self.assertEqual(registry.audit[-1]["status"], "timeout")
+
     def test_fixed_food_flow_runs_in_order_with_deterministic_ranker(self):
         calls = []
         state = run_bounded_food_flow(
