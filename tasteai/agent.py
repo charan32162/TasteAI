@@ -113,7 +113,12 @@ class ToolRegistry:
             raise ToolExecutionError("Agent tool failed safely.") from error
 
     def _record(self, name: str, status: str) -> None:
-        self.audit.append({"tool": name, "status": status, "call_count": self._calls})
+        self.audit.append({
+            "tool_call_id": f"tool-{len(self.audit) + 1}",
+            "tool": name,
+            "status": status,
+            "call_count": self._calls,
+        })
 
 
 @dataclass
@@ -180,6 +185,7 @@ def run_bounded_food_flow(
         raise AgentLimitError("Agent execution exceeded its configured limit.")
     state.final_response = {
         "trace_id": state.trace_id,
+        "agent_run_id": state.trace_id,
         "step_count": len(state.steps),
         "tool_call_count": state.tool_calls,
         "steps": list(state.steps),

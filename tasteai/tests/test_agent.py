@@ -61,6 +61,7 @@ class BoundedAgentTests(unittest.TestCase):
         self.assertEqual(state.final_response["autonomy"], "bounded_fixed_flow")
         self.assertEqual(state.final_response["authority"]["ranking"], "deterministic_ranker")
         self.assertEqual(state.final_response["tool_contracts"][1]["side_effects"], "read_only")
+        self.assertEqual(state.final_response["agent_run_id"], state.trace_id)
         self.assertEqual(state.final_response["limits"], {"max_steps": MAX_AGENT_STEPS, "max_tool_calls": MAX_AGENT_TOOL_CALLS})
         self.assertEqual(len(state.final_response["audit"]), MAX_AGENT_STEPS)
         self.assertTrue(state.final_response["audit"][1]["read_only"])

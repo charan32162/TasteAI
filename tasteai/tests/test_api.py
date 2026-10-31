@@ -13,7 +13,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from tasteai.app import app, get_menu_photo_extractor, place_lookup_rate_limit, seed_catalog
+from tasteai.app import RequestRateLimiter, app, get_menu_photo_extractor, place_lookup_rate_limit, seed_catalog
 from tasteai.ai_providers import AIProviderError, GroundedAnswer, GroundedClaim
 from tasteai.database import Base, get_db
 from tasteai.location_providers import GooglePlacesProvider
@@ -44,6 +44,14 @@ def test_database():
 
 
 class ApiTests(unittest.TestCase):
+    def test_request_rate_limiter_is_bounded_and_reports_retry_state(self):
+        limiter = RequestRateLimiter(limit=1, window_seconds=60, max_clients=1)
+        allowed, remaining = limiter.check("client")
+        self.assertTrue(allowed)
+        self.assertEqual(remaining, 0)
+        allowed, remaining = limiter.check("client")
+        self.assertFalse(allowed)
+        self.assertEqual(remaining, 0)
     @classmethod
     def setUpClass(cls):
         Base.metadata.create_all(bind=TEST_ENGINE)
@@ -442,6 +450,10 @@ class ApiTests(unittest.TestCase):
         self.assertTrue(guest.json()["guest_mode"])
         self.assertIsNone(guest.json()["memory_recorded"])
         self.assertTrue(guest.json()["recommendations"])
+        self.assertRegex(guest.headers["X-Request-ID"], r"^[A-Za-z0-9._:-]{8,100}$")
+        self.assertEqual(guest.json()["observability"]["request_id"], guest.headers["X-Request-ID"])
+        self.assertEqual(guest.json()["observability"]["agent_run_id"], guest.json()["agent"]["agent_run_id"])
+        self.assertEqual(len(guest.json()["observability"]["tool_call_ids"]), 2)
 
         headers = self.register("agent-chat@example.test")
         signed_in = self.client.post(

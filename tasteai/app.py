@@ -1,16 +1,20 @@
 import logging
 import os
+import re
+import threading
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
+from collections import defaultdict, deque
+from uuid import uuid4
 
 from alembic import command
 from alembic.config import Config
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, Path as PathParam, Query, Request, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, select
 from sqlalchemy.exc import IntegrityError
@@ -118,6 +122,38 @@ DEFAULT_FEATURES["adventure"] = 4
 DEFAULT_FEATURES["price_sensitivity"] = 6
 
 
+class RequestRateLimiter:
+    """Bounded process-local request guard for accidental or abusive bursts."""
+
+    def __init__(self, *, limit: int = 300, window_seconds: int = 60, max_clients: int = 4096):
+        self.limit = limit
+        self.window_seconds = window_seconds
+        self.max_clients = max_clients
+        self._lock = threading.Lock()
+        self._events: dict[str, deque[float]] = defaultdict(deque)
+
+    def check(self, client_id: str) -> tuple[bool, int]:
+        now = time.monotonic()
+        cutoff = now - self.window_seconds
+        with self._lock:
+            events = self._events[client_id]
+            while events and events[0] <= cutoff:
+                events.popleft()
+            if len(events) >= self.limit:
+                return False, 0
+            events.append(now)
+            if len(self._events) > self.max_clients:
+                self._events = defaultdict(
+                    deque,
+                    {key: value for key, value in self._events.items() if value and value[-1] > cutoff},
+                )
+            return True, max(0, self.limit - len(events))
+
+
+request_rate_limiter = RequestRateLimiter()
+_REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{8,100}$")
+
+
 def migrate_schema() -> None:
     config = Config(str(Path(__file__).with_name("alembic.ini")))
     inspector = inspect(engine)
@@ -209,10 +245,37 @@ app.mount("/assets", StaticFiles(directory=WEB_DIR), name="assets")
 
 @app.middleware("http")
 async def log_request(request: Request, call_next):
+    supplied_request_id = request.headers.get("X-Request-ID", "")
+    request_id = supplied_request_id if _REQUEST_ID_RE.fullmatch(supplied_request_id) else str(uuid4())
+    request.state.request_id = request_id
+    client_id = request.client.host if request.client else "unknown"
+    if request.url.path.startswith("/api/") and request.url.path != "/api/v1/health":
+        allowed, remaining = request_rate_limiter.check(client_id)
+        if not allowed:
+            response = JSONResponse(
+                {"detail": "Request rate limit reached; try again shortly.", "request_id": request_id},
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                headers={"Retry-After": str(request_rate_limiter.window_seconds)},
+            )
+            response.headers["X-Request-ID"] = request_id
+            return response
+    else:
+        remaining = None
     started = time.perf_counter()
     response = await call_next(request)
     elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
-    logger.info("request method=%s path=%s status=%d duration_ms=%s", request.method, request.url.path, response.status_code, elapsed_ms)
+    logger.info(
+        "request request_id=%s method=%s path=%s status=%d duration_ms=%s remaining=%s",
+        request_id,
+        request.method,
+        request.url.path,
+        response.status_code,
+        elapsed_ms,
+        remaining,
+    )
+    response.headers["X-Request-ID"] = request_id
+    if remaining is not None:
+        response.headers["X-RateLimit-Remaining"] = str(remaining)
     response.headers["X-Response-Time-ms"] = str(elapsed_ms)
     return response
 
@@ -1543,6 +1606,11 @@ def agent_chat(
     result["grounded_menu_evidence"] = state.explanation
     result["query_understanding"] = state.intent
     result["agent"] = state.final_response
+    result["observability"] = {
+        "request_id": getattr(request.state, "request_id", None),
+        "agent_run_id": state.trace_id,
+        "tool_call_ids": [item["tool_call_id"] for item in state.final_response.get("tool_audit", [])],
+    }
     result["message"] = (
         f"I noted that preference and ranked {len(result['recommendations'])} demo options."
         if memory_result else f"I parsed your request and ranked {len(result['recommendations'])} demo options."
