@@ -1094,6 +1094,7 @@ class ApiTests(unittest.TestCase):
             content = (
                 '<script type="application/ld+json">'
                 '{"@type":"MenuItem","name":"Chicken Biryani",'
+                '"description":"Prepared without peanuts.",'
                 '"offers":{"price":"220","priceCurrency":"INR"}}'
                 "</script>"
             )
@@ -1125,6 +1126,20 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(payload["results"][0]["price"]["amount"], "220.00")
         self.assertNotIn("recommendations", payload)
         self.assertNotIn("dish_id", payload["results"][0])
+
+        exclusion_response = self.client.post(
+            "/api/v1/food/evidence-search",
+            json={"query": "Chicken Biryani without peanuts"},
+        )
+        self.assertEqual(exclusion_response.status_code, 200, exclusion_response.text)
+        exclusion_result = exclusion_response.json()["results"][0]
+        self.assertTrue(any(
+            "explicitly claims these ingredients are excluded" in fact
+            for fact in exclusion_result["why"]
+        ))
+        self.assertTrue(any(
+            "cross-contact" in fact for fact in exclusion_result["why"]
+        ))
 
         profile_request = self.client.post(
             "/api/v1/food/evidence-search",
