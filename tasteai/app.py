@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
-from collections import defaultdict, deque
+from collections import OrderedDict, deque
 from uuid import uuid4
 
 from alembic import command
@@ -130,23 +130,29 @@ class RequestRateLimiter:
         self.window_seconds = window_seconds
         self.max_clients = max_clients
         self._lock = threading.Lock()
-        self._events: dict[str, deque[float]] = defaultdict(deque)
+        self._events: OrderedDict[str, deque[float]] = OrderedDict()
 
     def check(self, client_id: str) -> tuple[bool, int]:
         now = time.monotonic()
         cutoff = now - self.window_seconds
         with self._lock:
-            events = self._events[client_id]
+            events = self._events.get(client_id)
+            if events is None:
+                while self._events:
+                    _, oldest_events = next(iter(self._events.items()))
+                    if oldest_events and oldest_events[-1] > cutoff:
+                        break
+                    self._events.popitem(last=False)
+                if len(self._events) >= self.max_clients:
+                    return False, 0
+                events = deque()
+                self._events[client_id] = events
             while events and events[0] <= cutoff:
                 events.popleft()
             if len(events) >= self.limit:
                 return False, 0
             events.append(now)
-            if len(self._events) > self.max_clients:
-                self._events = defaultdict(
-                    deque,
-                    {key: value for key, value in self._events.items() if value and value[-1] > cutoff},
-                )
+            self._events.move_to_end(client_id)
             return True, max(0, self.limit - len(events))
 
 

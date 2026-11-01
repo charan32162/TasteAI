@@ -7,6 +7,7 @@
 
 - Passwords use salted PBKDF2-HMAC-SHA256. Bearer tokens are signed JWTs with expiry. Personal reads/writes use the authenticated user identity; friend taste transfer accepts only user-entered values and requires consent.
 - Request bodies use bounded Pydantic schemas. The app logs request method/path/status/latency and provider operation metadata without logging request bodies, credentials, precise location, or upstream provider bodies.
+- The generic API request limiter keeps at most 4,096 client buckets per process. When full, it prunes expired buckets and rejects requests from previously unseen clients with `429` until a bucket expires; existing clients retain their window state. This is a local memory bound, not a distributed rate limiter.
 - Google Places is disabled by default and requires a server-side key, an explicit paid-use opt-in, and HTTPS policy URLs. Field masks, timeouts, result limits, sanitized errors, and process-local throttling reduce accidental data/cost exposure.
 - Google place results are request-time only. User-provided nearby coordinates and manual area text are not stored. External place candidates cannot inherit fictional dishes.
 - Google Maps links are restricted to expected Maps hosts. The structured-data parser validates HTTPS source URLs, rejects embedded credentials and non-standard ports, bounds HTML bytes, JSON-LD script count, graph depth and nodes, and never performs a network request.

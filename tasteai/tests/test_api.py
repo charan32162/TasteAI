@@ -52,6 +52,23 @@ class ApiTests(unittest.TestCase):
         allowed, remaining = limiter.check("client")
         self.assertFalse(allowed)
         self.assertEqual(remaining, 0)
+
+    def test_request_rate_limiter_caps_client_buckets_and_reclaims_expired_clients(self):
+        limiter = RequestRateLimiter(limit=10, window_seconds=60, max_clients=2)
+        with patch("tasteai.app.time.monotonic", return_value=0):
+            self.assertEqual(limiter.check("client-a"), (True, 9))
+            self.assertEqual(limiter.check("client-b"), (True, 9))
+            for index in range(100):
+                self.assertEqual(limiter.check(f"new-client-{index}"), (False, 0))
+            self.assertEqual(len(limiter._events), 2)
+            self.assertEqual(limiter.check("client-a"), (True, 8))
+            self.assertEqual(len(limiter._events), 2)
+
+        with patch("tasteai.app.time.monotonic", return_value=61):
+            self.assertEqual(limiter.check("new-client"), (True, 9))
+            self.assertEqual(len(limiter._events), 1)
+            self.assertEqual(limiter.check("client-a"), (True, 9))
+            self.assertEqual(len(limiter._events), 2)
     @classmethod
     def setUpClass(cls):
         Base.metadata.create_all(bind=TEST_ENGINE)
