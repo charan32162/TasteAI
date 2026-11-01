@@ -268,7 +268,14 @@ def search_menu_evidence(
             exclude("ingredient_absence_unverified")
             continue
 
-        scores = _candidate_scores(candidate, intent, profile, weights)
+        matched_likes = _matched_liked_ingredients(candidate, profile)
+        scores = _candidate_scores(
+            candidate,
+            intent,
+            profile,
+            weights,
+            matched_liked_ingredients=matched_likes,
+        )
         denominator = sum(weights[key] for key in scores)
         score = sum(scores[key] * weights[key] for key in scores) / denominator if denominator else 0.0
         candidate["ranking"] = {
@@ -300,6 +307,7 @@ def search_menu_evidence(
             candidate,
             dish_query,
             intent,
+            matched_liked_ingredients=matched_likes,
         )
         candidate["explanation"] = {
             "summary": candidate["why"][0],
@@ -614,6 +622,8 @@ def _candidate_scores(
     intent: dict[str, Any],
     profile: TasteProfile | None,
     weights: dict[str, float],
+    *,
+    matched_liked_ingredients: list[str] | None = None,
 ) -> dict[str, float]:
     scores = {
         "dish_match": 100.0,
@@ -631,22 +641,48 @@ def _candidate_scores(
         target = budget if budget is not None else intent.get("budget_target")
         if target:
             scores["price_fit"] = max(0.0, min(100.0, 100.0 * (1 - amount / float(target))))
+    taste_signals = []
     if profile and profile.preferred_cuisines and candidate["dish"]["cuisine"]:
-        scores["taste_match"] = (
+        taste_signals.append(
             100.0
             if candidate["dish"]["cuisine"].casefold()
             in {str(cuisine).casefold() for cuisine in profile.preferred_cuisines}
             else 0.0
         )
+    if matched_liked_ingredients:
+        taste_signals.extend(100.0 for _ in matched_liked_ingredients)
+    if taste_signals:
+        scores["taste_match"] = sum(taste_signals) / len(taste_signals)
     if candidate["availability"]["state"] == "availability_supported":
         scores["availability_confidence"] = 100.0
     return {key: value for key, value in scores.items() if weights.get(key, 0) > 0}
+
+
+def _matched_liked_ingredients(
+    candidate: dict[str, Any],
+    profile: TasteProfile | None,
+) -> list[str]:
+    if profile is None:
+        return []
+    evidence_text = " ".join(
+        str(candidate["dish"].get(field) or "")
+        for field in INGREDIENT_EVIDENCE_FIELDS
+    )
+    return [
+        ingredient.strip()
+        for ingredient in profile.liked_ingredients or []
+        if isinstance(ingredient, str)
+        and ingredient.strip()
+        and _contains_term(evidence_text, ingredient)
+    ]
 
 
 def _grounded_explanation(
     candidate: dict[str, Any],
     requested_dish: str,
     intent: dict[str, Any],
+    *,
+    matched_liked_ingredients: list[str] | None = None,
 ) -> list[str]:
     explanation = [
         f"The stored menu item name exactly matches {requested_dish}.",
@@ -677,6 +713,11 @@ def _grounded_explanation(
         explanation.append("The menu evidence does not include a price.")
     if intent.get("budget_max") is not None:
         explanation.append(f"The explicit INR price is within your ₹{intent['budget_max']} budget.")
+    if matched_liked_ingredients:
+        explanation.append(
+            "The stored menu listing text mentions your liked ingredient(s): "
+            f"{', '.join(matched_liked_ingredients)}."
+        )
     if candidate["freshness"]["state"] == "stale":
         explanation.append("This menu evidence is stale and is strongly downgraded; it is not current confirmation.")
     else:
