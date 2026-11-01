@@ -640,8 +640,13 @@ def _ingredient_absence_state(text: str, ingredient: str) -> str:
         flags=re.UNICODE,
     )
     negated_absence_pattern = re.compile(
-        rf"(?<![\w])not\s+(?:no|without|free of|free from)\s+{term_pattern}|"
-        rf"(?<![\w])not\s+{term_pattern}\s+free(?![\w])",
+        rf"(?<![\w])(?:not|is not|are not|was not|were not)\s+"
+        rf"(?:(?:made|prepared|served|cooked)\s+)?"
+        rf"(?:no|without|free of|free from|contains no|does not contain|"
+        rf"does not include|made without|prepared without|not made with)\s+"
+        rf"{term_pattern}|"
+        rf"(?<![\w])(?:not|is not|are not|was not|were not)\s+"
+        rf"{term_pattern}\s+free(?![\w])",
         flags=re.UNICODE,
     )
     if negated_absence_pattern.search(text):
@@ -649,6 +654,21 @@ def _ingredient_absence_state(text: str, ingredient: str) -> str:
     claims = list(negative_pattern.finditer(text))
     if not claims:
         return "conflict" if re.search(term_pattern, text, flags=re.UNICODE) else "unknown"
+    uncertain_prefix = re.compile(
+        r"\b(?:may|might|can|could|possibly|optionally|if|unless)\b"
+        r"(?:[\s,]+\w+){0,5}[\s,]*$",
+        flags=re.UNICODE,
+    )
+    conditional_suffix = re.compile(
+        r"^[\s,]*(?:(?:only\s+)?(?:on|upon)\s+request|"
+        r"(?:if|when)(?:\s+\w+){0,3}\s+requested|unless\b)",
+        flags=re.UNICODE,
+    )
+    for claim in claims:
+        prefix = text[max(0, claim.start() - 80):claim.start()]
+        suffix = text[claim.end():claim.end() + 60]
+        if uncertain_prefix.search(prefix) or conditional_suffix.search(suffix):
+            return "conflict"
     remaining = negative_pattern.sub(" ", text)
     return (
         "explicit_absence"

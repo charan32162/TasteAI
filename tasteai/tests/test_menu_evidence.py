@@ -884,6 +884,9 @@ class MenuEvidenceTests(unittest.TestCase):
             ("Positive", "Contains peanuts."),
             ("Mixed", "Contains peanuts but prepared without peanuts."),
             ("Lookalike", "A peanutty spice blend."),
+            ("Negated", "This dish is not prepared without peanuts."),
+            ("Modal", "May be prepared without peanuts."),
+            ("Conditional", "Prepared without peanuts on request."),
         )
         ingest_menu_batch(
             self.db,
@@ -916,7 +919,7 @@ class MenuEvidenceTests(unittest.TestCase):
             {candidate["dish"]["variant"] for candidate in result["results"]},
             {"Without", "Free"},
         )
-        self.assertEqual(result["excluded_candidate_counts"], {"ingredient_absence_unverified": 4})
+        self.assertEqual(result["excluded_candidate_counts"], {"ingredient_absence_unverified": 7})
         for candidate in result["results"]:
             self.assertTrue(any("explicitly claims" in fact for fact in candidate["why"]))
             self.assertTrue(any("cross-contact" in fact for fact in candidate["why"]))

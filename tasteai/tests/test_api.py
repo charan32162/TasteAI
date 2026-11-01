@@ -1093,9 +1093,14 @@ class ApiTests(unittest.TestCase):
             source_id = source.id
             content = (
                 '<script type="application/ld+json">'
+                '{"@type":"Menu","hasMenuItem":['
                 '{"@type":"MenuItem","name":"Chicken Biryani",'
                 '"description":"Prepared without peanuts.",'
-                '"offers":{"price":"220","priceCurrency":"INR"}}'
+                '"offers":{"price":"220","priceCurrency":"INR"}},'
+                '{"@type":"MenuItem","name":"Chicken Biryani",'
+                '"description":"This dish is not prepared without peanuts.",'
+                '"offers":{"name":"Contradictory","price":"220","priceCurrency":"INR"}}'
+                ']}'
                 "</script>"
             )
             pending_batch = SchemaOrgMenuSourceProvider().parse_document(
@@ -1121,7 +1126,7 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         payload = response.json()
         self.assertEqual(payload["mode"], "approved_menu_evidence")
-        self.assertEqual(payload["result_count"], 1)
+        self.assertEqual(payload["result_count"], 2)
         self.assertEqual(payload["results"][0]["restaurant"]["name"], "Evidence Search Test Restaurant")
         self.assertEqual(payload["results"][0]["price"]["amount"], "220.00")
         self.assertNotIn("recommendations", payload)
@@ -1132,7 +1137,10 @@ class ApiTests(unittest.TestCase):
             json={"query": "Chicken Biryani without peanuts"},
         )
         self.assertEqual(exclusion_response.status_code, 200, exclusion_response.text)
-        exclusion_result = exclusion_response.json()["results"][0]
+        exclusion_payload = exclusion_response.json()
+        self.assertEqual(exclusion_payload["result_count"], 1)
+        exclusion_result = exclusion_payload["results"][0]
+        self.assertIsNone(exclusion_result["dish"]["variant"])
         self.assertTrue(any(
             "explicitly claims these ingredients are excluded" in fact
             for fact in exclusion_result["why"]
