@@ -1,0 +1,131 @@
+name: TasteAI offline checks
+
+on:
+  push:
+    paths:
+      - "tasteai/**"
+      - "Dockerfile.tasteai"
+      - "compose.yaml"
+      - ".dockerignore"
+      - ".github/workflows/tasteai.yml"
+      - "API.md"
+      - "SECURITY.md"
+      - "TASTEAI_ARCHITECTURE.md"
+      - "DEPLOYMENT.md"
+  pull_request:
+    paths:
+      - "tasteai/**"
+      - "Dockerfile.tasteai"
+      - "compose.yaml"
+      - ".dockerignore"
+      - ".github/workflows/tasteai.yml"
+      - "API.md"
+      - "SECURITY.md"
+      - "TASTEAI_ARCHITECTURE.md"
+      - "DEPLOYMENT.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tasteai-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  offline-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TASTEAI_ENV: test
+      TASTEAI_SECRET_KEY: tasteai-ci-only-signing-key-not-for-deployment
+      TASTEAI_AUTO_CREATE_SCHEMA: "false"
+      TASTEAI_RESTAURANT_PROVIDER: demo
+      TASTEAI_ALLOW_LLM: "false"
+      TASTEAI_ALLOW_EXTERNAL_EMBEDDINGS: "false"
+      TASTEAI_ALLOW_EXTERNAL_OCR: "false"
+      TASTEAI_ALLOW_PAID_PLACES_LOOKUPS: "false"
+      TASTEAI_DATABASE_URL: sqlite:///${{ runner.temp }}/tasteai-ci.db
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: tasteai/requirements.txt
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install TasteAI dependencies
+        run: python -m pip install -r tasteai/requirements-dev.txt
+      - name: Run TasteAI tests
+        run: python -m unittest discover -s tasteai/tests -v
+      - name: Run deterministic evaluator
+        run: python -m tasteai.evaluation.run --strict
+      - name: Compile Python
+        run: python -m compileall -q tasteai
+      - name: Check browser JavaScript syntax
+        run: node --check tasteai/web/app.js
+      - name: Verify migration chain and model parity
+        run: |
+          python -m alembic -c tasteai/alembic.ini upgrade head
+          python -m alembic -c tasteai/alembic.ini downgrade -1
+          python -m alembic -c tasteai/alembic.ini upgrade head
+          python -m alembic -c tasteai/alembic.ini check
+
+  postgres-migrations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: tasteai
+          POSTGRES_USER: tasteai
+          POSTGRES_PASSWORD: tasteai-ci-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tasteai -d tasteai"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      TASTEAI_ENV: test
+      TASTEAI_SECRET_KEY: tasteai-ci-only-signing-key-not-for-deployment
+      TASTEAI_AUTO_CREATE_SCHEMA: "false"
+      TASTEAI_RESTAURANT_PROVIDER: demo
+      TASTEAI_DATABASE_URL: postgresql+psycopg://tasteai:tasteai-ci-password@127.0.0.1:5432/tasteai
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: tasteai/requirements.txt
+      - name: Install TasteAI dependencies
+        run: python -m pip install -r tasteai/requirements-dev.txt
+      - name: Apply and verify PostgreSQL migrations
+        run: |
+          python -m alembic -c tasteai/alembic.ini upgrade head
+          python -m alembic -c tasteai/alembic.ini check
+          python -m alembic -c tasteai/alembic.ini downgrade -1
+          python -m alembic -c tasteai/alembic.ini upgrade head
+
+  container-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      POSTGRES_PASSWORD: tasteai-compose-ci-password
+      TASTEAI_SECRET_KEY: tasteai-compose-ci-signing-key-not-for-deployment
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Validate Compose configuration
+        run: docker compose config --quiet
+      - name: Build TasteAI container
+        run: docker build -f Dockerfile.tasteai -t tasteai:ci .

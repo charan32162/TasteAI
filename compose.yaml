@@ -1,0 +1,54 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: tasteai
+      POSTGRES_USER: tasteai
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the shell or a private env file}
+    volumes:
+      - tasteai-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tasteai -d tasteai"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.tasteai
+    image: tasteai:local
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      TASTEAI_ENV: ${TASTEAI_ENV:-production}
+      TASTEAI_SECRET_KEY: ${TASTEAI_SECRET_KEY:?Set TASTEAI_SECRET_KEY in the shell or a private env file}
+      TASTEAI_DATABASE_URL: postgresql+psycopg://tasteai:${POSTGRES_PASSWORD}@db:5432/tasteai
+      TASTEAI_AUTO_CREATE_SCHEMA: "false"
+      TASTEAI_RESTAURANT_PROVIDER: demo
+      TASTEAI_ALLOW_LLM: "false"
+      TASTEAI_ALLOW_EXTERNAL_EMBEDDINGS: "false"
+      TASTEAI_ALLOW_EXTERNAL_OCR: "false"
+      TASTEAI_ALLOW_PAID_PLACES_LOOKUPS: "false"
+    ports:
+      - "8000:8000"
+    volumes:
+      - tasteai-menu-photos:/home/tasteai/.tasteai/private-menu-photos
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+volumes:
+  tasteai-postgres-data:
+  tasteai-menu-photos:
