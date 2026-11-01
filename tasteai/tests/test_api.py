@@ -35,7 +35,7 @@ TEST_ENGINE = create_engine("sqlite://", connect_args={"check_same_thread": Fals
 TestSession = sessionmaker(bind=TEST_ENGINE, autoflush=False, expire_on_commit=False)
 
 
-def test_database():
+def database_override():
     session = TestSession()
     try:
         yield session
@@ -55,7 +55,7 @@ class ApiTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         Base.metadata.create_all(bind=TEST_ENGINE)
-        app.dependency_overrides[get_db] = test_database
+        app.dependency_overrides[get_db] = database_override
         cls.schema_startup_patch = patch.dict(os.environ, {"TASTEAI_AUTO_CREATE_SCHEMA": "false"})
         cls.schema_startup_patch.start()
         cls.client_context = TestClient(app)
