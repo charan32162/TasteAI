@@ -232,7 +232,7 @@ def seed_catalog(db: Session) -> None:
 async def lifespan(_: FastAPI):
     validate_security_config()
     restaurant_provider_status()
-    if os.getenv("TASTEAI_AUTO_CREATE_SCHEMA", "true").lower() == "true":
+    if os.getenv("TASTEAI_AUTO_CREATE_SCHEMA", "false").lower() == "true":
         migrate_schema()
         with SessionLocal() as db:
             seed_catalog(db)
