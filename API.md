@@ -15,7 +15,7 @@ Register/login return a short-lived bearer access token. Send it as `Authorizati
 | `POST /api/v1/auth/register`, `POST /api/v1/auth/login` | Public | Create account or start a session |
 | `GET /api/v1/users/me`, `GET /api/v1/users/me/taste-profile` | Authenticated | Read own account and Taste DNA |
 | `PATCH /api/v1/users/me/taste-profile` | Authenticated | Update explicit taste, cuisine, ingredient, and dietary preferences |
-| `GET /api/v1/food/catalog` | Public | Read bounded fictional demo catalog |
+| `GET /api/v1/food/catalog` | Public | Read bounded fictional demo catalog; optional `query` searches dish names, descriptions, cuisines, and listed synthetic ingredient tags |
 | `POST /api/v1/food/search`, `POST /api/v1/food/recommend` | Guest or authenticated | Parse intent and rank demo dishes; supports `auto`, `usual`, `different`, and `surprise` modes |
 | `POST /api/v1/food/evidence-search` | Guest or authenticated; profile use requires authentication | Search only approved, stored menu evidence by exact normalized dish name |
 | `POST /api/v1/food/feedback` | Authenticated | Record feedback and update history/learning |

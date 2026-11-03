@@ -641,15 +641,33 @@ def update_taste_profile(body: TasteProfileUpdate, db: Session = Depends(get_db)
 
 
 @app.get("/api/v1/food/catalog")
-def catalog(limit: int = 50, db: Session = Depends(get_db)):
+def catalog(
+    limit: int = 50,
+    query: str | None = Query(default=None, max_length=160),
+    db: Session = Depends(get_db),
+):
     if limit < 1 or limit > 100:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="limit must be between 1 and 100")
-    dishes = db.scalars(select(Dish).options(joinedload(Dish.restaurant)).limit(limit)).all()
+    search_term = query.strip().casefold() if query else ""
+    statement = select(Dish).options(joinedload(Dish.restaurant)).order_by(Dish.name, Dish.id)
+    if not search_term:
+        statement = statement.limit(limit)
+    dishes = db.scalars(statement).all()
+    if search_term:
+        dishes = [
+            dish for dish in dishes
+            if search_term in " ".join((
+                dish.name,
+                dish.description,
+                dish.cuisine,
+                *(str(item) for item in dish.ingredients),
+            )).casefold()
+        ]
     return [{
         "dish_id": dish.id, "name": dish.name, "description": dish.description, "cuisine": dish.cuisine,
         "price_inr": dish.price_inr, "vegetarian": dish.vegetarian, "ingredients": dish.ingredients,
-        "restaurant": dish.restaurant.name, "source_label": dish.source_label,
-    } for dish in dishes]
+        "attributes": dish.attributes, "restaurant": dish.restaurant.name, "source_label": dish.source_label,
+    } for dish in dishes[:limit]]
 
 
 @app.post("/api/v1/food/search")
