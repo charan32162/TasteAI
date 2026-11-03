@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
-from collections import defaultdict, deque
+from collections import OrderedDict, deque
 from uuid import uuid4
 
 from alembic import command
@@ -130,23 +130,29 @@ class RequestRateLimiter:
         self.window_seconds = window_seconds
         self.max_clients = max_clients
         self._lock = threading.Lock()
-        self._events: dict[str, deque[float]] = defaultdict(deque)
+        self._events: OrderedDict[str, deque[float]] = OrderedDict()
 
     def check(self, client_id: str) -> tuple[bool, int]:
         now = time.monotonic()
         cutoff = now - self.window_seconds
         with self._lock:
-            events = self._events[client_id]
+            events = self._events.get(client_id)
+            if events is None:
+                while self._events:
+                    _, oldest_events = next(iter(self._events.items()))
+                    if oldest_events and oldest_events[-1] > cutoff:
+                        break
+                    self._events.popitem(last=False)
+                if len(self._events) >= self.max_clients:
+                    return False, 0
+                events = deque()
+                self._events[client_id] = events
             while events and events[0] <= cutoff:
                 events.popleft()
             if len(events) >= self.limit:
                 return False, 0
             events.append(now)
-            if len(self._events) > self.max_clients:
-                self._events = defaultdict(
-                    deque,
-                    {key: value for key, value in self._events.items() if value and value[-1] > cutoff},
-                )
+            self._events.move_to_end(client_id)
             return True, max(0, self.limit - len(events))
 
 
@@ -226,7 +232,7 @@ def seed_catalog(db: Session) -> None:
 async def lifespan(_: FastAPI):
     validate_security_config()
     restaurant_provider_status()
-    if os.getenv("TASTEAI_AUTO_CREATE_SCHEMA", "true").lower() == "true":
+    if os.getenv("TASTEAI_AUTO_CREATE_SCHEMA", "false").lower() == "true":
         migrate_schema()
         with SessionLocal() as db:
             seed_catalog(db)
@@ -635,15 +641,33 @@ def update_taste_profile(body: TasteProfileUpdate, db: Session = Depends(get_db)
 
 
 @app.get("/api/v1/food/catalog")
-def catalog(limit: int = 50, db: Session = Depends(get_db)):
+def catalog(
+    limit: int = 50,
+    query: str | None = Query(default=None, max_length=160),
+    db: Session = Depends(get_db),
+):
     if limit < 1 or limit > 100:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="limit must be between 1 and 100")
-    dishes = db.scalars(select(Dish).options(joinedload(Dish.restaurant)).limit(limit)).all()
+    search_term = query.strip().casefold() if query else ""
+    statement = select(Dish).options(joinedload(Dish.restaurant)).order_by(Dish.name, Dish.id)
+    if not search_term:
+        statement = statement.limit(limit)
+    dishes = db.scalars(statement).all()
+    if search_term:
+        dishes = [
+            dish for dish in dishes
+            if search_term in " ".join((
+                dish.name,
+                dish.description,
+                dish.cuisine,
+                *(str(item) for item in dish.ingredients),
+            )).casefold()
+        ]
     return [{
         "dish_id": dish.id, "name": dish.name, "description": dish.description, "cuisine": dish.cuisine,
         "price_inr": dish.price_inr, "vegetarian": dish.vegetarian, "ingredients": dish.ingredients,
-        "restaurant": dish.restaurant.name, "source_label": dish.source_label,
-    } for dish in dishes]
+        "attributes": dish.attributes, "restaurant": dish.restaurant.name, "source_label": dish.source_label,
+    } for dish in dishes[:limit]]
 
 
 @app.post("/api/v1/food/search")

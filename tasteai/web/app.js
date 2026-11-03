@@ -151,7 +151,7 @@ function renderCard(item, interactive = signedIn(), bestMatch = false) {
     </article>`;
 }
 
-function renderRecommendations(items, clarification = null) {
+function renderRecommendations(items, clarification = null, scrollToResults = true) {
   const visibleItems = items.filter((item) => !state.guestHidden.has(item.dish_id));
   state.recommendations = visibleItems;
   $("#results-shell").hidden = false;
@@ -163,7 +163,9 @@ function renderRecommendations(items, clarification = null) {
     ? visibleItems.slice(1).map((item) => renderCard(item)).join("")
     : "";
   $("#results").parentElement.hidden = visibleItems.length <= 1;
-  requestAnimationFrame(() => $(".best-match-section").scrollIntoView({ behavior: "smooth", block: "start" }));
+  if (scrollToResults) {
+    requestAnimationFrame(() => $(".best-match-section").scrollIntoView({ behavior: "smooth", block: "start" }));
+  }
 }
 
 function renderPipeline(pipeline) {
@@ -182,7 +184,17 @@ function renderPipeline(pipeline) {
     : "The request could not enter the recommendation pipeline.";
 }
 
-async function discover(query = "") {
+function renderCatalogMatches(items, error = null) {
+  const section = $("#catalog-match-section");
+  section.hidden = !items.length && !error;
+  $("#catalog-match-message").textContent = error
+    ? `Direct catalog lookup unavailable: ${error}`
+    : items.length ? `${items.length} fictional catalog ${items.length === 1 ? "item matches" : "items match"} your text.`
+      : "";
+  $("#catalog-matches").innerHTML = items.map((item) => renderCard(item)).join("");
+}
+
+async function discover(query = "", scrollToResults = true) {
   const version = ++state.searchVersion;
   const body = requestBody(query);
   state.lastQuery = query;
@@ -198,13 +210,24 @@ async function discover(query = "") {
       if (error.status !== 401 || signedIn()) throw error;
       result = await api("/api/v1/food/search", { method: "POST", body: JSON.stringify(body) });
     }
+    let catalogMatches = [];
+    let catalogError = null;
+    if (query.trim()) {
+      try {
+        const params = new URLSearchParams({ query, limit: "100" });
+        catalogMatches = await api(`/api/v1/food/catalog?${params}`);
+      } catch (error) {
+        catalogError = error.message;
+      }
+    }
     if (version !== state.searchVersion) return;
     const unsupported = result.intent.unsupported_constraints?.length > 0;
     const clarification = unsupported
       ? `The demo menu can't verify ${result.intent.unsupported_constraints.join(", ")}. No options are shown for safety.`
       : result.clarification;
     renderPipeline(result.pipeline);
-    renderRecommendations(result.recommendations, clarification);
+    renderRecommendations(result.recommendations, clarification, scrollToResults);
+    renderCatalogMatches(catalogMatches, catalogError);
     $("#search-message").textContent = result.guest_mode
       ? "Guest discovery · search and compare without an account. Sign in only to save or build a persistent Taste Twin."
       : "Personalized with your saved Taste DNA and food history.";
@@ -803,3 +826,4 @@ refreshLocationProvider().catch((error) => {
   $("#location-message").textContent = `Location provider status is unavailable: ${error.message}`;
 });
 refreshRagStatus();
+discover("", false);

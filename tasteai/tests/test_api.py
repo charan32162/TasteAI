@@ -5,6 +5,7 @@ import os
 import unittest
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from pathlib import Path
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -29,13 +30,14 @@ from tasteai.menu_photos import DeterministicMenuPhotoExtractor, ExtractedMenuIt
 from tasteai.menu_photo_storage import StoredMenuPhoto
 from tasteai.models import EvidenceChunk, MenuDocument, MenuItemEvidence, MenuSource, Restaurant, RestaurantIdentity
 from tasteai.osm_provider import OpenStreetMapProvider
+from tasteai.providers import FictionalDemoProvider
 
 
 TEST_ENGINE = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
 TestSession = sessionmaker(bind=TEST_ENGINE, autoflush=False, expire_on_commit=False)
 
 
-def test_database():
+def database_override():
     session = TestSession()
     try:
         yield session
@@ -52,10 +54,27 @@ class ApiTests(unittest.TestCase):
         allowed, remaining = limiter.check("client")
         self.assertFalse(allowed)
         self.assertEqual(remaining, 0)
+
+    def test_request_rate_limiter_caps_client_buckets_and_reclaims_expired_clients(self):
+        limiter = RequestRateLimiter(limit=10, window_seconds=60, max_clients=2)
+        with patch("tasteai.app.time.monotonic", return_value=0):
+            self.assertEqual(limiter.check("client-a"), (True, 9))
+            self.assertEqual(limiter.check("client-b"), (True, 9))
+            for index in range(100):
+                self.assertEqual(limiter.check(f"new-client-{index}"), (False, 0))
+            self.assertEqual(len(limiter._events), 2)
+            self.assertEqual(limiter.check("client-a"), (True, 8))
+            self.assertEqual(len(limiter._events), 2)
+
+        with patch("tasteai.app.time.monotonic", return_value=61):
+            self.assertEqual(limiter.check("new-client"), (True, 9))
+            self.assertEqual(len(limiter._events), 1)
+            self.assertEqual(limiter.check("client-a"), (True, 9))
+            self.assertEqual(len(limiter._events), 2)
     @classmethod
     def setUpClass(cls):
         Base.metadata.create_all(bind=TEST_ENGINE)
-        app.dependency_overrides[get_db] = test_database
+        app.dependency_overrides[get_db] = database_override
         cls.schema_startup_patch = patch.dict(os.environ, {"TASTEAI_AUTO_CREATE_SCHEMA": "false"})
         cls.schema_startup_patch.start()
         cls.client_context = TestClient(app)
@@ -84,7 +103,10 @@ class ApiTests(unittest.TestCase):
         self.assertIn('id="location-use-taste-profile"', page.text)
         self.assertIn("Grounded AI pipeline", page.text)
         self.assertIn("approved menu evidence", page.text)
+        self.assertIn('id="catalog-match-section"', page.text)
         self.assertEqual(script.status_code, 200)
+        self.assertIn('discover("", false)', script.text)
+        self.assertIn("/api/v1/food/catalog?", script.text)
         self.assertIn('/api/v1/restaurants/discover', script.text)
         self.assertIn("place.dish_evidence", script.text)
         self.assertIn("Evidence ranking estimate", script.text)
@@ -407,11 +429,47 @@ class ApiTests(unittest.TestCase):
         return {"Authorization": f"Bearer {response.json()['access_token']}"}
 
     def test_catalog_is_labeled_and_has_no_claimed_reviews(self):
-        catalog = self.client.get("/api/v1/food/catalog")
+        catalog = self.client.get("/api/v1/food/catalog?limit=100")
         self.assertEqual(catalog.status_code, 200)
-        self.assertEqual(len(catalog.json()), 7)
+        self.assertEqual(len(catalog.json()), 100)
         self.assertTrue(all(item["source_label"] == "fictional demo" for item in catalog.json()))
-        details = self.client.get("/api/v1/dishes/demo-chilli-chicken")
+        provider_dishes = FictionalDemoProvider().dishes()
+        dataset_dishes = [item for item in provider_dishes if item.id.startswith("dish-")]
+        self.assertEqual(len(provider_dishes), 1000)
+        self.assertEqual(len(dataset_dishes), 1000)
+        self.assertEqual(len({item.id for item in dataset_dishes}), 1000)
+        self.assertEqual(len({item.name.casefold() for item in dataset_dishes}), 1000)
+        self.assertEqual(len({item.id for item in provider_dishes}), 1000)
+        self.assertEqual(len({item.name.casefold() for item in provider_dishes}), 1000)
+        source_rows = json.loads(
+            (Path(__file__).parents[1] / "data" / "indian_demo_dishes.json").read_text(encoding="utf-8")
+        )["dishes"]
+        self.assertEqual(
+            {item.id: item.attributes["dataset_metadata"] for item in dataset_dishes},
+            {item["id"]: item for item in source_rows},
+        )
+        self.assertEqual(set(dataset_dishes[0].attributes["dataset_metadata"]), {
+            "id", "name", "description", "cuisine", "price_inr", "diet",
+            "ingredient_tags", "spice_level", "taste_tags", "region", "category",
+            "meal_type",
+        })
+        self.assertEqual(dataset_dishes[0].attributes["dataset_metadata"]["name"], "Pesarattu")
+        self.assertEqual(dataset_dishes[0].attributes["dataset_metadata"]["region"], "Andhra Pradesh")
+        api_sample = self.client.get("/api/v1/dishes/dish-0001")
+        self.assertEqual(api_sample.status_code, 200)
+        self.assertEqual(api_sample.json()["attributes"]["dataset_metadata"], dataset_dishes[0].attributes["dataset_metadata"])
+        name_search = self.client.get("/api/v1/food/catalog?query=Pesarattu&limit=100")
+        self.assertEqual(name_search.status_code, 200)
+        self.assertIn("dish-0001", [item["dish_id"] for item in name_search.json()])
+        last_dataset_dish = self.client.get("/api/v1/dishes/dish-1000")
+        self.assertEqual(last_dataset_dish.status_code, 200)
+        discovered = self.client.post(
+            "/api/v1/food/search",
+            json={"query": "I want vegan food under ₹100", "limit": 50},
+        )
+        self.assertEqual(discovered.status_code, 200, discovered.text)
+        self.assertTrue(all(item["price_inr"] <= 100 for item in discovered.json()["recommendations"]))
+        details = self.client.get("/api/v1/dishes/dish-0001")
         self.assertEqual(details.json()["reviews"], [])
         nearby = self.client.get("/api/v1/restaurants/nearby")
         self.assertEqual(nearby.status_code, 200)
@@ -614,18 +672,23 @@ class ApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200, response.text)
         self.assertTrue(response.json()["recommendations"])
-        self.assertTrue(all("chicken" in item["name"].lower() for item in response.json()["recommendations"]))
+        self.assertTrue(all(
+            "chicken" in " ".join((
+                item["name"], item["description"], item["cuisine"], *item["ingredients"]
+            )).casefold()
+            for item in response.json()["recommendations"]
+        ))
         self.assertTrue(all("why" in item and "components" in item for item in response.json()["recommendations"]))
         feedback = self.client.post(
             "/api/v1/food/feedback",
             headers=headers,
-            json={"dish_id": "demo-crispy-chickpeas", "action": "tried", "rating": 5},
+            json={"dish_id": "dish-0003", "action": "tried", "rating": 5},
         )
         self.assertEqual(feedback.status_code, 200, feedback.text)
         profile = self.client.get("/api/v1/users/me/taste-profile", headers=headers).json()
-        self.assertEqual(profile["features"]["crunch"], 6)
-        self.assertEqual(profile["feature_provenance"]["crunch"], "inferred")
-        self.assertIn("Indian", profile["preferred_cuisines"])
+        self.assertEqual(profile["features"]["spice"], 5)
+        self.assertEqual(profile["feature_provenance"]["spice"], "inferred")
+        self.assertIn("Andhra", profile["preferred_cuisines"])
         self.assertEqual(len(self.client.get("/api/v1/food/history", headers=headers).json()), 1)
 
     def test_personalized_modes_and_structured_feedback_learning(self):
@@ -670,7 +733,7 @@ class ApiTests(unittest.TestCase):
         feedback = self.client.post(
             "/api/v1/food/feedback",
             headers=headers,
-            json={"dish_id": "demo-spicy-paneer", "action": "tried", "rating": 5},
+            json={"dish_id": "dish-0003", "action": "tried", "rating": 5},
         )
         self.assertEqual(feedback.status_code, 200, feedback.text)
         profile = self.client.get("/api/v1/users/me/taste-profile", headers=headers).json()
@@ -679,7 +742,7 @@ class ApiTests(unittest.TestCase):
         structured = self.client.post(
             "/api/v1/food/feedback",
             headers=headers,
-            json={"dish_id": "demo-spicy-paneer", "action": "too_spicy"},
+            json={"dish_id": "dish-0003", "action": "too_spicy"},
         )
         self.assertEqual(structured.status_code, 200, structured.text)
         self.assertIsNone(structured.json()["learned_feature"])
@@ -1076,8 +1139,14 @@ class ApiTests(unittest.TestCase):
             source_id = source.id
             content = (
                 '<script type="application/ld+json">'
+                '{"@type":"Menu","hasMenuItem":['
                 '{"@type":"MenuItem","name":"Chicken Biryani",'
-                '"offers":{"price":"220","priceCurrency":"INR"}}'
+                '"description":"Prepared without peanuts.",'
+                '"offers":{"price":"220","priceCurrency":"INR"}},'
+                '{"@type":"MenuItem","name":"Chicken Biryani",'
+                '"description":"This dish is not prepared without peanuts.",'
+                '"offers":{"name":"Contradictory","price":"220","priceCurrency":"INR"}}'
+                ']}'
                 "</script>"
             )
             pending_batch = SchemaOrgMenuSourceProvider().parse_document(
@@ -1103,11 +1172,28 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         payload = response.json()
         self.assertEqual(payload["mode"], "approved_menu_evidence")
-        self.assertEqual(payload["result_count"], 1)
+        self.assertEqual(payload["result_count"], 2)
         self.assertEqual(payload["results"][0]["restaurant"]["name"], "Evidence Search Test Restaurant")
         self.assertEqual(payload["results"][0]["price"]["amount"], "220.00")
         self.assertNotIn("recommendations", payload)
         self.assertNotIn("dish_id", payload["results"][0])
+
+        exclusion_response = self.client.post(
+            "/api/v1/food/evidence-search",
+            json={"query": "Chicken Biryani without peanuts"},
+        )
+        self.assertEqual(exclusion_response.status_code, 200, exclusion_response.text)
+        exclusion_payload = exclusion_response.json()
+        self.assertEqual(exclusion_payload["result_count"], 1)
+        exclusion_result = exclusion_payload["results"][0]
+        self.assertIsNone(exclusion_result["dish"]["variant"])
+        self.assertTrue(any(
+            "explicitly claims these ingredients are excluded" in fact
+            for fact in exclusion_result["why"]
+        ))
+        self.assertTrue(any(
+            "cross-contact" in fact for fact in exclusion_result["why"]
+        ))
 
         profile_request = self.client.post(
             "/api/v1/food/evidence-search",
@@ -1351,16 +1437,20 @@ class ApiTests(unittest.TestCase):
         headers = self.register()
         excluded = {
             "participants": [
-                {
-                    "name": "Alex",
-                    "ingredient_exclusions": ["chicken", "paneer", "chickpeas", "mushroom", "rice", "lentils"],
-                },
+                {"name": "Alex", "ingredient_exclusions": ["chicken"]},
                 {"name": "Sam"},
             ]
         }
         response = self.client.post("/api/v1/groups/recommend", headers=headers, json=excluded)
         self.assertEqual(response.status_code, 200)
-        self.assertTrue(response.json()["no_compatible_options"])
+        result = response.json()
+        self.assertFalse(result["no_compatible_options"])
+        self.assertTrue(all(
+            "chicken" not in item["dish_name"].casefold()
+            for recommendation in result["recommendations"]
+            for item in recommendation["menu_options"]
+            if item["attendee"] == "Alex"
+        ))
         unsupported = {
             "participants": [
                 {"name": "Alex", "dietary_restrictions": ["peanut allergy"]},
@@ -1381,7 +1471,7 @@ class ApiTests(unittest.TestCase):
     def test_taste_transfer_requires_consent_and_does_not_persist_friend_data(self):
         headers = self.register()
         payload = {
-            "dish_id": "demo-chilli-chicken",
+            "dish_id": "dish-0003",
             "friend_rating": 5,
             "friend_features": {"spice": 9, "crunch": 5, "smokiness": 3},
             "consent_confirmed": False,
@@ -1394,7 +1484,7 @@ class ApiTests(unittest.TestCase):
         result = response.json()
         self.assertTrue(result["friend_consent_confirmed"])
         self.assertEqual(result["friend_rating"], 5)
-        self.assertEqual(result["dish_name"], "Chilli Chicken Bowl")
+        self.assertEqual(result["dish_name"], "Gongura Mutton")
         self.assertEqual(result["source_label"], "fictional demo")
         self.assertIn("not independently verified", result["friend_rating_note"])
         self.assertEqual(self.client.get("/api/v1/food/history", headers=headers).json(), [])

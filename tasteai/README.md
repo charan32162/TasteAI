@@ -69,7 +69,7 @@ Install optional test client dependencies with `python -m pip install -r tasteai
 python -m unittest discover -s tasteai\tests -v
 ```
 
-The tests use a temporary SQLite database and mocked provider transport; they do not contact external services. The deterministic recommendation regression corpus is synthetic and contains 110 requests. Run it with `python -m tasteai.evaluation.run --strict`; it checks parsed intent, hard constraints, requested attributes in the best match, and explanation grounding. Its scores measure regression coverage against the fictional seven-dish catalog, not real-world recommendation quality.
+The tests use a temporary SQLite database and mocked provider transport; they do not contact external services. The deterministic recommendation regression corpus is synthetic and contains 110 requests. Run it with `python -m tasteai.evaluation.run --strict`; it checks parsed intent, hard constraints, requested attributes in the best match, and explanation grounding against seven hand-crafted fictional evaluation-only fixtures, separate from the public 1,000-dish catalog. API tests cover dataset loading and search. These checks measure regression coverage, not real-world recommendation quality.
 
 Architecture, source rights/status, API, security limitations, evaluation, and development setup are documented in the repository-root `TASTEAI_ARCHITECTURE.md`, `DATA_SOURCES.md`, `API.md`, `SECURITY.md`, `EVALUATION.md`, and `DEVELOPMENT.md`.
 

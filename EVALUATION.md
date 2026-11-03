@@ -10,7 +10,7 @@ Run from the repository root:
 .\tasteai\.venv\Scripts\python.exe -m tasteai.evaluation.run --strict
 ```
 
-The current corpus contains 110 synthetic search requests against the explicitly fictional seven-dish catalog. The strict evaluator checks parsed intent, hard constraints, requested attributes in the top result, and explanation grounding. It also runs a synthetic typed-claim fixture through the independent RAG validator; that fixture covers supported listing/price claims, unknown evidence, unknown prices, duplicates, citations, and injected text. Latest run: no failures.
+The current corpus contains 110 synthetic search requests against seven hand-crafted fictional evaluation-only fixtures, separate from the public 1,000-dish demo catalog. The evaluator uses these fixed cases so the supplied synthetic catalog does not rewrite recommendation expectations. API tests separately cover loading exactly 1,000 unique dishes, metadata preservation, direct name search, budget filtering, and API access. The evaluator also runs a synthetic typed-claim fixture through the independent RAG validator. These checks measure regression coverage, not real-world recommendation quality.
 
 | Metric | Result |
 | --- | ---: |

@@ -1,4 +1,7 @@
+import json
 from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
 from typing import Protocol
 
 
@@ -19,7 +22,7 @@ class DemoDish:
     price_inr: int
     vegetarian: bool
     ingredients: tuple[str, ...]
-    attributes: dict[str, int | str]
+    attributes: dict[str, object]
 
 
 @dataclass(frozen=True)
@@ -84,12 +87,80 @@ class FictionalDemoProvider:
         ]
 
     def dishes(self) -> list[DemoDish]:
-        return [
-            DemoDish("demo-chilli-chicken", "demo-kitchen-01", "Chilli Chicken Bowl", "A fictional demo bowl with a bold chilli profile.", "Indo-Chinese", 260, False, ("chicken", "chilli", "pepper"), {"spice": 8, "sweet": 2, "sour": 3, "salty": 6, "richness": 6, "oiliness": 5, "smokiness": 2, "crunch": 7, "texture": 7, "portion_size": 7, "adventure": 6, "protein": "chicken"}),
-            DemoDish("demo-herb-paneer", "demo-kitchen-01", "Herb Paneer Plate", "A fictional demo paneer plate with herbs and a mild finish.", "North Indian", 240, True, ("paneer", "herbs", "yogurt"), {"spice": 3, "sweet": 1, "sour": 4, "salty": 5, "richness": 6, "oiliness": 3, "smokiness": 1, "crunch": 2, "texture": 5, "portion_size": 6, "adventure": 3, "protein": "paneer"}),
-            DemoDish("demo-crispy-chickpeas", "demo-kitchen-02", "Crispy Chickpea Snack", "A fictional demo snack with toasted chickpeas and warm spice.", "Indian", 120, True, ("chickpeas", "cumin", "chilli"), {"spice": 6, "sweet": 1, "sour": 2, "salty": 6, "richness": 3, "oiliness": 2, "smokiness": 2, "crunch": 9, "texture": 9, "portion_size": 3, "adventure": 5, "protein": "chickpeas"}),
-            DemoDish("demo-mushroom-rice", "demo-kitchen-02", "Mushroom Rice Bowl", "A fictional demo rice bowl with mushrooms and gentle seasoning.", "Fusion", 210, True, ("mushroom", "rice", "ginger"), {"spice": 2, "sweet": 1, "sour": 2, "salty": 4, "richness": 5, "oiliness": 2, "smokiness": 1, "crunch": 1, "texture": 4, "portion_size": 6, "adventure": 4, "protein": "mushroom"}),
-            DemoDish("demo-smoky-chicken", "demo-kitchen-03", "Smoky Chicken Wrap", "A fictional demo wrap with a smoky chicken filling.", "Fusion", 290, False, ("chicken", "pepper", "flatbread"), {"spice": 5, "sweet": 1, "sour": 2, "salty": 5, "richness": 6, "oiliness": 4, "smokiness": 9, "crunch": 3, "texture": 6, "portion_size": 7, "adventure": 7, "protein": "chicken"}),
-            DemoDish("demo-lentil-meal", "demo-kitchen-03", "Lentil Garden Meal", "A fictional demo meal with lentils, vegetables, and rice.", "Indian", 180, True, ("lentils", "vegetables", "rice"), {"spice": 3, "sweet": 2, "sour": 2, "salty": 4, "richness": 3, "oiliness": 1, "smokiness": 1, "crunch": 2, "texture": 3, "portion_size": 8, "adventure": 2, "protein": "lentils"}),
-            DemoDish("demo-spicy-paneer", "demo-kitchen-01", "Spicy Paneer Bowl", "A fictional demo paneer bowl with chilli and pepper.", "North Indian", 280, True, ("paneer", "chilli", "pepper", "yogurt"), {"spice": 7, "sweet": 1, "sour": 3, "salty": 6, "richness": 5, "oiliness": 4, "smokiness": 1, "crunch": 3, "texture": 5, "portion_size": 7, "adventure": 5, "protein": "paneer"}),
-        ]
+        return list(_indian_demo_dishes())
+
+
+_DATASET_FIELDS = {
+    "id", "name", "description", "cuisine", "price_inr", "diet",
+    "ingredient_tags", "spice_level", "taste_tags", "region", "category",
+    "meal_type",
+}
+_SPICE_SCORES = {"mild": 2, "medium": 5, "spicy": 7, "very_spicy": 9}
+
+
+@lru_cache(maxsize=1)
+def _indian_demo_dishes() -> tuple[DemoDish, ...]:
+    path = Path(__file__).with_name("data") / "indian_demo_dishes.json"
+    try:
+        dataset = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise RuntimeError("The bundled fictional Indian demo dataset is unavailable or invalid.") from error
+    if not isinstance(dataset, dict):
+        raise RuntimeError("The bundled fictional Indian demo dataset has an invalid envelope.")
+    rows = dataset.get("dishes")
+    if (
+        dataset.get("dataset_type") != "synthetic_demo"
+        or dataset.get("dish_count") != 1000
+        or not isinstance(rows, list)
+        or len(rows) != 1000
+    ):
+        raise RuntimeError("The bundled fictional Indian demo dataset failed its count or provenance check.")
+
+    dishes = []
+    seen_ids = set()
+    seen_names = set()
+    for row in rows:
+        if not isinstance(row, dict) or set(row) != _DATASET_FIELDS:
+            raise RuntimeError("A fictional Indian demo dish has missing or unexpected fields.")
+        name = row["name"]
+        dish_id = row["id"]
+        if not isinstance(name, str) or not name.strip() or not isinstance(dish_id, str) or not dish_id:
+            raise RuntimeError("A fictional Indian demo dish has an invalid name or ID.")
+        if dish_id in seen_ids or name.casefold().strip() in seen_names:
+            raise RuntimeError("The fictional Indian demo dataset contains duplicate dish IDs or names.")
+        if (
+            any(
+                not isinstance(row[key], str) or not row[key].strip()
+                for key in ("description", "cuisine", "diet", "spice_level", "region", "category", "meal_type")
+            )
+            or not isinstance(row["price_inr"], int)
+            or isinstance(row["price_inr"], bool)
+            or row["price_inr"] < 0
+            or not isinstance(row["ingredient_tags"], list)
+            or not row["ingredient_tags"]
+            or any(not isinstance(item, str) or not item.strip() for item in row["ingredient_tags"])
+            or row["diet"] not in {"vegan", "vegetarian", "egg", "non_vegetarian"}
+            or row["spice_level"] not in _SPICE_SCORES
+            or not isinstance(row["taste_tags"], list)
+            or not row["taste_tags"]
+            or any(not isinstance(item, str) or not item.strip() for item in row["taste_tags"])
+        ):
+            raise RuntimeError("A fictional Indian demo dish contains invalid metadata.")
+        seen_ids.add(dish_id)
+        seen_names.add(name.casefold().strip())
+        # The source contains no restaurant facts; use only the existing fictional demo venue.
+        dishes.append(DemoDish(
+            id=dish_id,
+            restaurant_id="demo-kitchen-01",
+            name=name,
+            description=row["description"],
+            cuisine=row["cuisine"],
+            price_inr=row["price_inr"],
+            vegetarian=row["diet"] in {"vegan", "vegetarian"},
+            ingredients=tuple(row["ingredient_tags"]),
+            attributes={
+                "spice": _SPICE_SCORES[row["spice_level"]],
+                "dataset_metadata": row.copy(),
+            },
+        ))
+    return tuple(dishes)

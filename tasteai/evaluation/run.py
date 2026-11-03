@@ -21,7 +21,7 @@ from tasteai.evaluation.multi_restaurant import (
 )
 from tasteai.menu_evidence import RestaurantIdentityCandidate, approve_menu_source, create_restaurant_identity, normalize_dish_name, register_menu_source
 from tasteai.models import Dish, MenuDocument, MenuItemEvidence, Restaurant, TasteProfile
-from tasteai.providers import FictionalDemoProvider
+from tasteai.providers import DemoDish, FictionalDemoProvider
 from tasteai.rag import RetrievedEvidence, build_grounded_context, index_approved_evidence, search_rag_context, validate_grounded_claims
 
 
@@ -30,6 +30,7 @@ CORPUS_PATH = Path(__file__).with_name("corpus.json")
 
 def _demo_catalog() -> list[Dish]:
     provider = FictionalDemoProvider()
+    # Keep authored regression fixtures separate from the public 1,000-dish demo catalog.
     restaurants = {
         item.id: Restaurant(
             id=item.id,
@@ -40,6 +41,15 @@ def _demo_catalog() -> list[Dish]:
         )
         for item in provider.restaurants()
     }
+    evaluation_dishes = [
+        DemoDish("eval-chilli-chicken", "demo-kitchen-01", "Chilli Chicken Bowl", "A fictional demo bowl with a bold chilli profile.", "Indo-Chinese", 260, False, ("chicken", "chilli", "pepper"), {"spice": 8, "sweet": 2, "sour": 3, "salty": 6, "richness": 6, "oiliness": 5, "smokiness": 2, "crunch": 7, "texture": 7, "portion_size": 7, "adventure": 6, "protein": "chicken"}),
+        DemoDish("eval-herb-paneer", "demo-kitchen-01", "Herb Paneer Plate", "A fictional demo paneer plate with herbs and a mild finish.", "North Indian", 240, True, ("paneer", "herbs", "yogurt"), {"spice": 3, "sweet": 1, "sour": 4, "salty": 5, "richness": 6, "oiliness": 3, "smokiness": 1, "crunch": 2, "texture": 5, "portion_size": 6, "adventure": 3, "protein": "paneer"}),
+        DemoDish("eval-crispy-chickpeas", "demo-kitchen-02", "Crispy Chickpea Snack", "A fictional demo snack with toasted chickpeas and warm spice.", "Indian", 120, True, ("chickpeas", "cumin", "chilli"), {"spice": 6, "sweet": 1, "sour": 2, "salty": 6, "richness": 3, "oiliness": 2, "smokiness": 2, "crunch": 9, "texture": 9, "portion_size": 3, "adventure": 5, "protein": "chickpeas"}),
+        DemoDish("eval-mushroom-rice", "demo-kitchen-02", "Mushroom Rice Bowl", "A fictional demo rice bowl with mushrooms and gentle seasoning.", "Fusion", 210, True, ("mushroom", "rice", "ginger"), {"spice": 2, "sweet": 1, "sour": 2, "salty": 4, "richness": 5, "oiliness": 2, "smokiness": 1, "crunch": 1, "texture": 4, "portion_size": 6, "adventure": 4, "protein": "mushroom"}),
+        DemoDish("eval-smoky-chicken", "demo-kitchen-03", "Smoky Chicken Wrap", "A fictional demo wrap with a smoky chicken filling.", "Fusion", 290, False, ("chicken", "pepper", "flatbread"), {"spice": 5, "sweet": 1, "sour": 2, "salty": 5, "richness": 6, "oiliness": 4, "smokiness": 9, "crunch": 3, "texture": 6, "portion_size": 7, "adventure": 7, "protein": "chicken"}),
+        DemoDish("eval-lentil-meal", "demo-kitchen-03", "Lentil Garden Meal", "A fictional demo meal with lentils, vegetables, and rice.", "Indian", 180, True, ("lentils", "vegetables", "rice"), {"spice": 3, "sweet": 2, "sour": 2, "salty": 4, "richness": 3, "oiliness": 1, "smokiness": 1, "crunch": 2, "texture": 3, "portion_size": 8, "adventure": 2, "protein": "lentils"}),
+        DemoDish("eval-spicy-paneer", "demo-kitchen-01", "Spicy Paneer Bowl", "A fictional demo paneer bowl with chilli and pepper.", "North Indian", 280, True, ("paneer", "chilli", "pepper", "yogurt"), {"spice": 7, "sweet": 1, "sour": 3, "salty": 6, "richness": 5, "oiliness": 4, "smokiness": 1, "crunch": 3, "texture": 5, "portion_size": 7, "adventure": 5, "protein": "paneer"}),
+    ]
     return [
         Dish(
             id=item.id,
@@ -54,7 +64,7 @@ def _demo_catalog() -> list[Dish]:
             source_label=provider.source_label,
             restaurant=restaurants[item.restaurant_id],
         )
-        for item in provider.dishes()
+        for item in evaluation_dishes
     ]
 
 

@@ -264,11 +264,23 @@ def search_menu_evidence(
             if price_status != "eligible":
                 exclude(price_status)
                 continue
-        if _has_unverified_ingredient_exclusions(intent, profile, candidate):
+        explicit_exclusions = _explicit_ingredient_exclusion_claims(
+            intent,
+            profile,
+            selected_rows,
+        )
+        if explicit_exclusions is None:
             exclude("ingredient_absence_unverified")
             continue
 
-        scores = _candidate_scores(candidate, intent, profile, weights)
+        matched_likes = _matched_liked_ingredients(candidate, profile)
+        scores = _candidate_scores(
+            candidate,
+            intent,
+            profile,
+            weights,
+            matched_liked_ingredients=matched_likes,
+        )
         denominator = sum(weights[key] for key in scores)
         score = sum(scores[key] * weights[key] for key in scores) / denominator if denominator else 0.0
         candidate["ranking"] = {
@@ -300,6 +312,8 @@ def search_menu_evidence(
             candidate,
             dish_query,
             intent,
+            matched_liked_ingredients=matched_likes,
+            explicit_ingredient_exclusions=explicit_exclusions,
         )
         candidate["explanation"] = {
             "summary": candidate["why"][0],
@@ -566,15 +580,101 @@ def _explicitly_vegetarian(candidate: dict[str, Any]) -> bool:
     return False
 
 
-def _has_unverified_ingredient_exclusions(
+def _explicit_ingredient_exclusion_claims(
     intent: dict[str, Any],
     profile: TasteProfile | None,
-    _candidate: dict[str, Any],
-) -> bool:
+    evidence_rows: list[dict[str, Any]],
+) -> list[str] | None:
     exclusions = [*intent.get("avoid", [])]
     if profile:
         exclusions.extend(profile.disliked_ingredients or [])
-    return bool(exclusions)
+    claims: list[str] = []
+    seen: set[str] = set()
+    for exclusion in exclusions:
+        if not isinstance(exclusion, str):
+            return None
+        normalized = normalize_dish_name(exclusion)
+        if not normalized:
+            return None
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        if not _has_explicit_ingredient_absence(evidence_rows, normalized):
+            return None
+        claims.append(exclusion.strip())
+    return claims
+
+
+def _has_explicit_ingredient_absence(
+    evidence_rows: list[dict[str, Any]],
+    ingredient: str,
+) -> bool:
+    has_absence_claim = False
+    for row in evidence_rows:
+        if row["freshness"]["state"] != "fresh":
+            return False
+        text = normalize_dish_name(" ".join(
+            str(row.get(field) or "")
+            for field in INGREDIENT_EVIDENCE_FIELDS
+        ))
+        state = _ingredient_absence_state(text, ingredient)
+        if state == "conflict":
+            return False
+        has_absence_claim |= state == "explicit_absence"
+    return has_absence_claim
+
+
+def _ingredient_absence_state(text: str, ingredient: str) -> str:
+    terms = [ingredient]
+    if ingredient.endswith("s") and len(ingredient) > 3:
+        terms.append(ingredient[:-1])
+    term_alternatives = "|".join(
+        re.escape(term).replace(r"\ ", r"\s+")
+        for term in sorted(terms, key=len, reverse=True)
+    )
+    term_pattern = rf"(?<![\w])(?:{term_alternatives})(?![\w])"
+    negative_pattern = re.compile(
+        rf"(?<![\w])(?:no|without|free of|free from|contains no|"
+        rf"does not contain|does not include|made without|prepared without|"
+        rf"not made with)\s+{term_pattern}|{term_pattern}\s+free(?![\w])",
+        flags=re.UNICODE,
+    )
+    negated_absence_pattern = re.compile(
+        rf"(?<![\w])(?:not|is not|are not|was not|were not)\s+"
+        rf"(?:(?:made|prepared|served|cooked)\s+)?"
+        rf"(?:no|without|free of|free from|contains no|does not contain|"
+        rf"does not include|made without|prepared without|not made with)\s+"
+        rf"{term_pattern}|"
+        rf"(?<![\w])(?:not|is not|are not|was not|were not)\s+"
+        rf"{term_pattern}\s+free(?![\w])",
+        flags=re.UNICODE,
+    )
+    if negated_absence_pattern.search(text):
+        return "conflict"
+    claims = list(negative_pattern.finditer(text))
+    if not claims:
+        return "conflict" if re.search(term_pattern, text, flags=re.UNICODE) else "unknown"
+    uncertain_prefix = re.compile(
+        r"\b(?:may|might|can|could|possibly|optionally|if|unless)\b"
+        r"(?:[\s,]+\w+){0,5}[\s,]*$",
+        flags=re.UNICODE,
+    )
+    conditional_suffix = re.compile(
+        r"^[\s,]*(?:(?:only\s+)?(?:on|upon)\s+request|"
+        r"(?:if|when)(?:\s+\w+){0,3}\s+requested|unless\b)",
+        flags=re.UNICODE,
+    )
+    for claim in claims:
+        prefix = text[max(0, claim.start() - 80):claim.start()]
+        suffix = text[claim.end():claim.end() + 60]
+        if uncertain_prefix.search(prefix) or conditional_suffix.search(suffix):
+            return "conflict"
+    remaining = negative_pattern.sub(" ", text)
+    return (
+        "explicit_absence"
+        if re.search(term_pattern, remaining, flags=re.UNICODE) is None
+        else "conflict"
+    )
 
 
 def _evidence_text(candidate: dict[str, Any]) -> str:
@@ -614,6 +714,8 @@ def _candidate_scores(
     intent: dict[str, Any],
     profile: TasteProfile | None,
     weights: dict[str, float],
+    *,
+    matched_liked_ingredients: list[str] | None = None,
 ) -> dict[str, float]:
     scores = {
         "dish_match": 100.0,
@@ -631,22 +733,49 @@ def _candidate_scores(
         target = budget if budget is not None else intent.get("budget_target")
         if target:
             scores["price_fit"] = max(0.0, min(100.0, 100.0 * (1 - amount / float(target))))
+    taste_signals = []
     if profile and profile.preferred_cuisines and candidate["dish"]["cuisine"]:
-        scores["taste_match"] = (
+        taste_signals.append(
             100.0
             if candidate["dish"]["cuisine"].casefold()
             in {str(cuisine).casefold() for cuisine in profile.preferred_cuisines}
             else 0.0
         )
+    if matched_liked_ingredients:
+        taste_signals.extend(100.0 for _ in matched_liked_ingredients)
+    if taste_signals:
+        scores["taste_match"] = sum(taste_signals) / len(taste_signals)
     if candidate["availability"]["state"] == "availability_supported":
         scores["availability_confidence"] = 100.0
     return {key: value for key, value in scores.items() if weights.get(key, 0) > 0}
+
+
+def _matched_liked_ingredients(
+    candidate: dict[str, Any],
+    profile: TasteProfile | None,
+) -> list[str]:
+    if profile is None:
+        return []
+    evidence_text = " ".join(
+        str(candidate["dish"].get(field) or "")
+        for field in INGREDIENT_EVIDENCE_FIELDS
+    )
+    return [
+        ingredient.strip()
+        for ingredient in profile.liked_ingredients or []
+        if isinstance(ingredient, str)
+        and ingredient.strip()
+        and _contains_term(evidence_text, ingredient)
+    ]
 
 
 def _grounded_explanation(
     candidate: dict[str, Any],
     requested_dish: str,
     intent: dict[str, Any],
+    *,
+    matched_liked_ingredients: list[str] | None = None,
+    explicit_ingredient_exclusions: list[str] | None = None,
 ) -> list[str]:
     explanation = [
         f"The stored menu item name exactly matches {requested_dish}.",
@@ -677,6 +806,17 @@ def _grounded_explanation(
         explanation.append("The menu evidence does not include a price.")
     if intent.get("budget_max") is not None:
         explanation.append(f"The explicit INR price is within your ₹{intent['budget_max']} budget.")
+    if matched_liked_ingredients:
+        explanation.append(
+            "The stored menu listing text mentions your liked ingredient(s): "
+            f"{', '.join(matched_liked_ingredients)}."
+        )
+    if explicit_ingredient_exclusions:
+        explanation.append(
+            "The approved menu text explicitly claims these ingredients are excluded: "
+            f"{', '.join(explicit_ingredient_exclusions)}. This claim does not verify actual ingredient "
+            "composition, allergen safety, preparation practices, or absence of cross-contact."
+        )
     if candidate["freshness"]["state"] == "stale":
         explanation.append("This menu evidence is stale and is strongly downgraded; it is not current confirmation.")
     else:

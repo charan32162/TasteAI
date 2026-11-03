@@ -37,7 +37,13 @@ from tasteai.menu_evidence import (
     revoke_menu_source,
     verify_menu_document,
 )
-from tasteai.models import MenuDocument, MenuItemEvidence, MenuSource, RestaurantIdentity
+from tasteai.models import (
+    MenuDocument,
+    MenuItemEvidence,
+    MenuSource,
+    RestaurantIdentity,
+    TasteProfile,
+)
 from tasteai.restaurant_discovery import discover_restaurants
 from tasteai.schemas import RestaurantDiscoveryRequest
 
@@ -426,6 +432,82 @@ class MenuEvidenceTests(unittest.TestCase):
         self.assertTrue(candidate["ranking"]["is_estimate"])
         self.assertIsNone(candidate["availability"]["available_now"])
 
+    def test_evidence_ranking_uses_only_explicit_liked_ingredient_mentions(self):
+        source = self.create_source()
+        self.approve(source)
+        ingest_menu_batch(
+            self.db,
+            self.parse(
+                source,
+                [
+                    {
+                        "@type": "MenuItem",
+                        "name": "Chicken Biryani",
+                        "description": "A classic rice dish.",
+                        "offers": {
+                            "name": "Plain",
+                            "price": "220",
+                            "priceCurrency": "INR",
+                        },
+                    },
+                    {
+                        "@type": "MenuItem",
+                        "name": "Chicken Biryani",
+                        "description": "Served with garlic.",
+                        "offers": {
+                            "name": "Garlic",
+                            "price": "220",
+                            "priceCurrency": "INR",
+                        },
+                    },
+                    {
+                        "@type": "MenuItem",
+                        "name": "Chicken Biryani",
+                        "description": "A garlicky rice dish.",
+                        "offers": {
+                            "name": "Garlicky",
+                            "price": "220",
+                            "priceCurrency": "INR",
+                        },
+                    },
+                ],
+            ),
+        )
+        self.db.commit()
+        profile = TasteProfile(
+            user_id=1,
+            features={},
+            feature_provenance={},
+            preferred_cuisines=[],
+            liked_ingredients=["garlic"],
+            disliked_ingredients=[],
+            dietary_restrictions=[],
+        )
+
+        result = search_menu_evidence(
+            self.db,
+            "Chicken Biryani",
+            profile=profile,
+            now=CAPTURED_AT + timedelta(minutes=1),
+        )
+
+        self.assertEqual(result["result_count"], 3)
+        matched = result["results"][0]
+        candidates_by_variant = {
+            candidate["dish"]["variant"]: candidate
+            for candidate in result["results"]
+        }
+        unmatched = candidates_by_variant["Garlicky"]
+        absent = candidates_by_variant["Plain"]
+        self.assertEqual(matched["dish"]["variant"], "Garlic")
+        self.assertEqual(matched["dish"]["description"], "Served with garlic.")
+        self.assertEqual(matched["ranking"]["components"]["taste_match"]["score"], 100.0)
+        self.assertTrue(any("liked ingredient(s): garlic" in fact for fact in matched["why"]))
+        self.assertNotIn("taste_match", unmatched["ranking"]["components"])
+        self.assertNotIn("taste_match", absent["ranking"]["components"])
+        self.assertFalse(any("liked ingredient" in fact for fact in unmatched["why"]))
+        self.assertFalse(any("liked ingredient" in fact for fact in absent["why"]))
+
     def test_evidence_discovery_does_not_broaden_to_an_unrequested_dish(self):
         source = self.create_source()
         self.approve(source)
@@ -791,6 +873,132 @@ class MenuEvidenceTests(unittest.TestCase):
         )
         self.assertEqual(peanuts["results"], [])
         self.assertEqual(peanuts["status"], "insufficient_evidence")
+
+    def test_explicit_ingredient_absence_claims_are_required_for_exclusion_match(self):
+        source = self.create_source()
+        self.approve(source)
+        descriptions = (
+            ("Without", "Prepared without peanuts."),
+            ("Free", "Peanut-free."),
+            ("Unknown", "A classic chicken rice dish."),
+            ("Positive", "Contains peanuts."),
+            ("Mixed", "Contains peanuts but prepared without peanuts."),
+            ("Lookalike", "A peanutty spice blend."),
+            ("Negated", "This dish is not prepared without peanuts."),
+            ("Modal", "May be prepared without peanuts."),
+            ("Conditional", "Prepared without peanuts on request."),
+        )
+        ingest_menu_batch(
+            self.db,
+            self.parse(
+                source,
+                [
+                    {
+                        "@type": "MenuItem",
+                        "name": "Chicken Biryani",
+                        "description": description,
+                        "offers": {
+                            "name": variant,
+                            "price": "220",
+                            "priceCurrency": "INR",
+                        },
+                    }
+                    for variant, description in descriptions
+                ],
+            ),
+        )
+        self.db.commit()
+
+        result = search_menu_evidence(
+            self.db,
+            "Chicken Biryani without peanuts",
+            now=CAPTURED_AT + timedelta(minutes=1),
+        )
+
+        self.assertEqual(
+            {candidate["dish"]["variant"] for candidate in result["results"]},
+            {"Without", "Free"},
+        )
+        self.assertEqual(result["excluded_candidate_counts"], {"ingredient_absence_unverified": 7})
+        for candidate in result["results"]:
+            self.assertTrue(any("explicitly claims" in fact for fact in candidate["why"]))
+            self.assertTrue(any("cross-contact" in fact for fact in candidate["why"]))
+
+        profile = TasteProfile(
+            user_id=1,
+            features={},
+            feature_provenance={},
+            preferred_cuisines=[],
+            liked_ingredients=[],
+            disliked_ingredients=["peanuts"],
+            dietary_restrictions=[],
+        )
+        profile_exclusion = search_menu_evidence(
+            self.db,
+            "Chicken Biryani",
+            profile=profile,
+            now=CAPTURED_AT + timedelta(minutes=1),
+        )
+        self.assertEqual(
+            {candidate["dish"]["variant"] for candidate in profile_exclusion["results"]},
+            {"Without", "Free"},
+        )
+
+        unsupported_profile = TasteProfile(
+            user_id=1,
+            features={},
+            feature_provenance={},
+            preferred_cuisines=[],
+            liked_ingredients=[],
+            disliked_ingredients=["sesame"],
+            dietary_restrictions=[],
+        )
+        unsupported_profile_exclusion = search_menu_evidence(
+            self.db,
+            "Chicken Biryani",
+            profile=unsupported_profile,
+            now=CAPTURED_AT + timedelta(minutes=1),
+        )
+        self.assertEqual(unsupported_profile_exclusion["results"], [])
+        self.assertEqual(unsupported_profile_exclusion["status"], "insufficient_evidence")
+
+        conflicting_source = self.create_source(identifier="ingredient-conflict")
+        self.approve(conflicting_source)
+        ingest_menu_batch(
+            self.db,
+            self.parse(
+                conflicting_source,
+                [{
+                    "@type": "MenuItem",
+                    "name": "Chicken Biryani",
+                    "description": "Contains peanuts.",
+                    "offers": {
+                        "name": "Without",
+                        "price": "220",
+                        "priceCurrency": "INR",
+                    },
+                }],
+            ),
+        )
+        self.db.commit()
+        conflicting = search_menu_evidence(
+            self.db,
+            "Chicken Biryani without peanuts",
+            now=CAPTURED_AT + timedelta(minutes=1),
+        )
+        self.assertEqual(
+            {candidate["dish"]["variant"] for candidate in conflicting["results"]},
+            {"Free"},
+        )
+
+        with patch.dict(os.environ, {"TASTEAI_EVIDENCE_STALE_POLICY": "downgrade"}):
+            stale = search_menu_evidence(
+                self.db,
+                "Chicken Biryani without peanuts",
+                now=CAPTURED_AT + timedelta(days=2),
+            )
+        self.assertEqual(stale["results"], [])
+        self.assertEqual(stale["status"], "insufficient_evidence")
 
     def test_evidence_ranking_weights_are_normalized_and_invalid_configuration_fails(self):
         with patch.dict(
